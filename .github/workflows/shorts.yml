@@ -1,4 +1,4 @@
-name: AI Shorts Bot
+name: Riddle Shorts Bot (4K)
 
 on:
   schedule:
@@ -21,7 +21,7 @@ concurrency:
 jobs:
   shorts:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
       YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}

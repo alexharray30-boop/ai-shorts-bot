@@ -1,15 +1,13 @@
 """
-AI Shorts Bot
--------------
-Trending (US/UK) topic -> AI script -> AI images -> animated 10s vertical video
--> AI voiceover + captions -> upload to YouTube as a Short.
+Riddle Shorts Bot (4K)
+----------------------
+Makes a 10-second 4K (2160x3840) riddle Short and uploads it to YouTube.
 
-Everything uses free services:
-  * YouTube Data API (trending + upload)      - free quota
-  * Pollinations.ai (AI images + AI text)     - free, no key
-  * Google Gemini (optional, better scripts)  - free API key
-  * edge-tts (AI voice)                       - free
-  * FFmpeg (editing)                          - free
+  hook banner -> riddle card pops in (AI voice reads it) -> 3-2-1 countdown ring
+  -> answer reveal (ding + voice) -> "comment if you got it" call-to-action
+
+Everything is drawn by code (no stock / no downloaded images), so there is
+no copyright risk and the picture is always sharp 4K.
 
 Usage:
   python bot/main.py                # upload only if >= MIN_HOURS since last upload
@@ -22,6 +20,7 @@ import argparse
 import asyncio
 import datetime as dt
 import json
+import math
 import os
 import pathlib
 import random
@@ -29,30 +28,40 @@ import re
 import shutil
 import subprocess
 import sys
-import time
-import urllib.parse
 
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from riddles import RIDDLES  # noqa: E402
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "out"
+FONTS = ROOT / "fonts"
 STATE_FILE = ROOT / "state" / "history.json"
 MUSIC_DIR = ROOT / "music"
 
-W, H, FPS = 1080, 1920, 30
-DURATION = float(os.getenv("VIDEO_SECONDS", "10"))
-NUM_SCENES = 3
-XFADE = 0.5
+SCALE = float(os.getenv("RENDER_SCALE", "1"))  # 1 = 4K, 0.5 = 1080p (fast tests)
+W, H = int(2160 * SCALE), int(3840 * SCALE)
+FPS = 30
+D = float(os.getenv("VIDEO_SECONDS", "10"))
 MIN_HOURS = float(os.getenv("MIN_HOURS_BETWEEN_UPLOADS", "10"))
-PRIVACY = os.getenv("PRIVACY_STATUS", "public")  # public | unlisted | private
+PRIVACY = os.getenv("PRIVACY_STATUS", "public")
 VOICE = os.getenv("TTS_VOICE", "en-US-AndrewMultilingualNeural")
-REGIONS = ["US", "GB"]
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
 ]
-UA = {"User-Agent": "ai-shorts-bot/1.0"}
+UA = {"User-Agent": "riddle-shorts-bot/2.0"}
+
+
+def S(v):
+    """scale a 4K pixel value"""
+    return int(v * SCALE)
+
+
+def log(*a):
+    print("[bot]", *a, flush=True)
 
 
 def _find_ffmpeg():
@@ -70,10 +79,6 @@ def _find_ffmpeg():
 FFMPEG = _find_ffmpeg()
 
 
-def log(*a):
-    print("[bot]", *a, flush=True)
-
-
 # --------------------------------------------------------------------------- #
 # State
 # --------------------------------------------------------------------------- #
@@ -86,7 +91,7 @@ def load_history():
 
 def save_history(hist):
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(hist[-200:], indent=2, ensure_ascii=False), encoding="utf-8")
+    STATE_FILE.write_text(json.dumps(hist[-500:], indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- #
@@ -112,7 +117,6 @@ def yt_client():
 
 
 def hours_since_last_upload(yt, history):
-    """Uses the channel's real uploads list, falls back to local history."""
     latest = None
     try:
         ch = yt.channels().list(part="contentDetails", mine=True).execute()
@@ -134,56 +138,21 @@ def hours_since_last_upload(yt, history):
     return (dt.datetime.now(dt.timezone.utc) - latest).total_seconds() / 3600
 
 
-def trending_signals(yt):
-    """Titles + tags of what is trending right now in the US and UK."""
-    signals = []
-    if yt is None:
-        return signals
-    for region in REGIONS:
-        for cat in (None, "28", "24", "1"):  # all, Science&Tech, Entertainment, Film&Animation
-            try:
-                kw = {"videoCategoryId": cat} if cat else {}
-                res = yt.videos().list(part="snippet", chart="mostPopular", regionCode=region,
-                                       maxResults=15, **kw).execute()
-                for v in res.get("items", []):
-                    sn = v["snippet"]
-                    signals.append(sn["title"])
-                    signals.extend(sn.get("tags", [])[:5])
-            except Exception as e:
-                log(f"trending {region}/{cat} skipped:", str(e)[:120])
-    # de-duplicate, keep order
-    seen, out = set(), []
-    for s in signals:
-        k = s.lower().strip()
-        if k and k not in seen:
-            seen.add(k)
-            out.append(s.strip())
-    return out[:120]
-
-
 def upload(yt, path, meta):
     from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload
 
-    title = clean_title(meta["title"])
-    tags = fit_tags(meta.get("tags", []))
-    hashtags = " ".join("#" + re.sub(r"[^A-Za-z0-9]", "", h) for h in meta.get("hashtags", []) if h)
-    desc = f"{meta.get('description', '').strip()}\n\n{hashtags} #Shorts #AI #AIart\n\n" \
-           "Made with AI (images + voice). All visuals are AI-generated and original."
     body = {
         "snippet": {
-            "title": title,
-            "description": desc[:4900],
-            "tags": tags,
-            "categoryId": os.getenv("YT_CATEGORY_ID", "24"),
+            "title": meta["title"][:100],
+            "description": meta["description"][:4900],
+            "tags": fit_tags(meta["tags"]),
+            "categoryId": "24",  # Entertainment
             "defaultLanguage": "en",
             "defaultAudioLanguage": "en",
         },
-        "status": {
-            "privacyStatus": PRIVACY,
-            "selfDeclaredMadeForKids": False,
-            "containsSyntheticMedia": True,  # YouTube's AI-content disclosure
-        },
+        "status": {"privacyStatus": PRIVACY, "selfDeclaredMadeForKids": False,
+                   "containsSyntheticMedia": False},
     }
 
     def _do(b):
@@ -206,18 +175,11 @@ def upload(yt, path, meta):
     return resp["id"]
 
 
-def clean_title(t):
-    t = re.sub(r"[<>]", "", t).strip()
-    if "#shorts" not in t.lower() and len(t) <= 90:
-        t += " #Shorts"
-    return t[:100]
-
-
 def fit_tags(tags):
     out, total = [], 0
     for t in tags:
         t = re.sub(r"[<>,\"]", "", str(t)).strip()[:30]
-        if not t:
+        if not t or t in out:
             continue
         cost = len(t) + (2 if " " in t else 0) + 1
         if total + cost > 480:
@@ -228,258 +190,209 @@ def fit_tags(tags):
 
 
 # --------------------------------------------------------------------------- #
-# Script writing (AI)
+# Content
 # --------------------------------------------------------------------------- #
-SCRIPT_PROMPT = """You are a viral YouTube Shorts producer for an "AI videos" channel.
-Audience: USA and UK. Video length: exactly {secs} seconds, vertical, {n} AI-generated scenes.
+HOOKS = ["ONLY 1% CAN SOLVE THIS", "99% GET THIS WRONG", "CAN YOU SOLVE THIS?",
+         "GENIUS TEST", "3 SECONDS TO ANSWER", "BET YOU CAN'T GET THIS"]
+TITLES = [
+    "Only 1% Can Solve This Riddle 🧠 #shorts",
+    "99% Get This Riddle Wrong! 🤯 #shorts",
+    "Can You Solve This Riddle in 3 Seconds? ⏱️ #shorts",
+    "Riddle Only Geniuses Can Answer 🧠 #riddles",
+    "Bet You Can't Solve This Riddle 😏 #shorts",
+    "Tricky Riddle That Fools Everyone 🤔 #shorts",
+    "IQ Test: Can You Answer This Riddle? 🧠 #shorts",
+    "Quick Brain Teaser – Can You Get It? ⚡ #shorts",
+]
+BASE_TAGS = ["riddles", "riddles with answers", "brain teasers", "riddle challenge", "tricky riddles",
+             "can you solve this", "only geniuses can solve", "iq test", "brain test", "riddles for adults",
+             "hard riddles", "funny riddles", "logic puzzles", "puzzle", "quiz", "trivia", "brain games",
+             "riddle shorts", "shorts", "viral shorts", "riddles in english", "mind games", "test your brain"]
 
-Trending on YouTube right now (US/UK titles & tags):
-{trending}
-
-Recent videos on this channel (do NOT repeat these ideas):
-{recent}
-
-Pick ONE idea that rides a current trend or evergreen high-search topic, in a format like:
-"AI imagines ...", "What if ... (AI)", "AI shows ... in the year 3000", "AI turns ... into ...".
-
-STRICT RULES (copyright & safety):
-- NO real people, celebrities, politicians, brand names, logos, or copyrighted characters/franchises.
-- Use generic, descriptive concepts only (e.g. "a futuristic London", not a specific film).
-- Family-friendly, no tragedies, no misinformation.
-- Scenes must show places, landscapes, cities, vehicles, animals, creatures, robots or objects.
-  NEVER people, human bodies or human-like figures.
-- Keep it simple and visual: each scene clearly shows the idea at a glance (scroll-stopping, bright, epic).
-- Captions: plain simple English words (no hyphens or fancy words).
-
-Return ONLY valid JSON with these keys:
-{{
- "idea": "short internal description",
- "title": "catchy title, max 70 chars, high-search keywords first",
- "description": "2-3 sentences with natural search keywords",
- "tags": ["15-20 search keywords people in the US/UK actually type"],
- "hashtags": ["5 hashtags without #"],
- "narration": "spoken voiceover, 18-24 words, strong hook in first 3 words, ends with a question or 'follow for more'",
- "captions": ["{n} short on-screen captions, max 5 words each, one per scene"],
- "scenes": ["{n} very detailed cinematic image prompts, vertical 9:16, photorealistic or stylized, dramatic lighting, one per scene"]
-}}"""
-
-FALLBACK_IDEAS = [
-    ("AI imagines cities in the year 3000", ["a futuristic New York style megacity in the year 3000, flying cars, neon skyline, cinematic",
-      "a futuristic London style city in 3000, glass towers over a river, golden hour, ultra detailed",
-      "a floating sky city above clouds in the year 3000, sunrise, epic scale, photorealistic"]),
-    ("AI turns the seasons into creatures", ["a majestic spring spirit creature made of blossoms, forest, soft light, fantasy art",
-      "a summer fire phoenix creature over a golden desert, dramatic sunset, cinematic",
-      "a winter ice dragon creature in a frozen mountain storm, blue light, epic"]),
-    ("What if planets were giant pets", ["a cute fluffy creature version of planet Mars sitting in space, pixar style, glowing",
-      "a playful ocean creature version of planet Earth hugging the moon, stylized 3D, stars",
-      "a sleepy giant gas creature version of Jupiter curled up in space, soft light, 3D render"]),
-    ("AI shows the ocean's deepest secrets", ["a glowing bioluminescent deep sea city, mysterious, cinematic underwater lighting",
-      "a colossal ancient sea creature in the dark ocean abyss, rays of light, ultra detailed",
-      "a hidden crystal cave under the ocean, glowing jellyfish, magical, photorealistic"]),
-    ("AI imagines dinosaurs living today", ["a friendly dinosaur walking through a modern city park, people-free, cinematic photo",
-      "a dinosaur drinking from a mountain lake at sunrise, national geographic style",
-      "a herd of dinosaurs crossing a highway bridge at golden hour, epic wide shot"]),
-    ("AI turns food into tiny worlds", ["a miniature village built inside a giant donut, tilt shift, cozy lights",
-      "a tiny city skyline on top of a pizza, macro photography, warm light",
-      "a small waterfall world inside a cup of coffee, fantasy macro, cinematic"]),
+PALETTES = [  # top, bottom, accent
+    ((88, 28, 135), (15, 23, 42), (250, 204, 21)),
+    ((14, 116, 144), (8, 20, 45), (251, 146, 60)),
+    ((190, 18, 60), (40, 10, 40), (253, 224, 71)),
+    ((22, 101, 52), (5, 30, 25), (250, 204, 21)),
+    ((30, 64, 175), (10, 10, 35), (52, 211, 153)),
+    ((147, 51, 234), (30, 10, 60), (34, 211, 238)),
+    ((234, 88, 12), (60, 15, 10), (255, 255, 255)),
 ]
 
+AI_PROMPT = """Write ONE new riddle for a YouTube Shorts riddle channel (US/UK adults).
+Rules:
+- The question must be at most 16 words, clear, and have ONE widely accepted answer.
+- The answer must be 1-3 words.
+- It must be genuinely correct (double-check the logic). Clever wordplay or logic is best.
+- Family-friendly. No real people or brands.
+- Do NOT use any of these (already posted): {used}
+Return ONLY JSON: {{"question": "...", "answer": "..."}}"""
 
-def recent_titles(history):
-    return [h.get("title", "") for h in history[-25:]]
 
-
-def ask_gemini(prompt):
+def ask_ai(prompt):
     key = os.getenv("GEMINI_API_KEY")
-    if not key:
-        return None
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    r = requests.post(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-        headers={"x-goog-api-key": key, "Content-Type": "application/json"},
-        json={"contents": [{"parts": [{"text": prompt}]}],
-              "generationConfig": {"responseMimeType": "application/json", "temperature": 1.0}},
-        timeout=90,
-    )
-    r.raise_for_status()
-    return r.json()["candidates"][0]["content"]["parts"][0]["text"]
-
-
-def ask_pollinations(prompt):
-    r = requests.post(
-        "https://text.pollinations.ai/openai",
-        headers={**UA, "Content-Type": "application/json"},
-        json={"model": "openai", "messages": [{"role": "user", "content": prompt}],
-              "seed": random.randint(1, 10**6)},
-        timeout=120,
-    )
+    if key:
+        try:
+            r = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')}:generateContent",
+                headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+                json={"contents": [{"parts": [{"text": prompt}]}],
+                      "generationConfig": {"responseMimeType": "application/json"}},
+                timeout=90)
+            r.raise_for_status()
+            return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception as e:
+            log("gemini failed:", str(e)[:150])
+    r = requests.post("https://text.pollinations.ai/openai", headers={**UA, "Content-Type": "application/json"},
+                      json={"model": "openai", "messages": [{"role": "user", "content": prompt}],
+                            "seed": random.randint(1, 10**6)}, timeout=120)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"]
 
 
-def parse_json(text):
-    text = text.strip()
-    m = re.search(r"\{.*\}", text, re.S)
-    return json.loads(m.group(0) if m else text)
-
-
-def valid_meta(m):
-    try:
-        return (m["title"] and m["narration"] and len(m["scenes"]) >= NUM_SCENES
-                and len(m["captions"]) >= NUM_SCENES)
-    except Exception:
-        return False
-
-
-def write_script(trending, history):
-    prompt = SCRIPT_PROMPT.format(
-        secs=int(DURATION), n=NUM_SCENES,
-        trending="\n".join("- " + t for t in trending[:60]) or "- (not available, use evergreen viral AI topics)",
-        recent="\n".join("- " + t for t in recent_titles(history)) or "- (none yet)",
-    )
-    for name, fn in (("gemini", ask_gemini), ("pollinations", ask_pollinations), ("pollinations", ask_pollinations)):
+def pick_riddle(history):
+    used = {h.get("question", "").lower() for h in history}
+    fresh = [r for r in RIDDLES if r[0].lower() not in used]
+    if fresh:
+        q, a = random.choice(fresh)
+        return q, a, "bank"
+    for _ in range(3):
         try:
-            raw = fn(prompt)
-            if not raw:
-                continue
-            meta = parse_json(raw)
-            if valid_meta(meta):
-                meta["scenes"] = meta["scenes"][:NUM_SCENES]
-                meta["captions"] = meta["captions"][:NUM_SCENES]
-                meta["writer"] = name
-                log(f"script by {name}:", meta["title"])
-                return meta
+            raw = ask_ai(AI_PROMPT.format(used="; ".join(list(used)[-40:])))
+            m = re.search(r"\{.*\}", raw, re.S)
+            d = json.loads(m.group(0))
+            q, a = d["question"].strip(), d["answer"].strip()
+            if 3 <= len(q.split()) <= 18 and 1 <= len(a.split()) <= 4 and q.lower() not in used:
+                return q, a, "ai"
         except Exception as e:
-            log(f"{name} failed:", str(e)[:150])
+            log("ai riddle failed:", str(e)[:150])
+    q, a = random.choice(RIDDLES)  # everything used: recycle
+    return q, a, "recycled"
 
-    used = set(recent_titles(history))
-    choices = [i for i in FALLBACK_IDEAS if i[0] not in used] or FALLBACK_IDEAS
-    title, scenes = random.choice(choices)
-    log("using built-in fallback idea:", title)
-    return {
-        "idea": title, "title": title, "writer": "fallback",
-        "description": f"{title}. Watch what artificial intelligence created! New AI videos every day.",
-        "tags": ["ai", "ai art", "ai video", "ai generated", "artificial intelligence", "ai imagines",
-                 "what if", "midjourney style", "ai shorts", "future", "viral shorts", "satisfying"],
-        "hashtags": ["ai", "aiart", "aivideo", "shorts", "viral"],
-        "narration": f"{title}. Number three will blow your mind. Which one is your favorite? Follow for more!",
-        "captions": ["Watch this...", "Wait for it...", "Which one wins?"],
-        "scenes": scenes,
-    }
+
+def build_meta(q, a, hook):
+    title = random.choice(TITLES)
+    desc = (f"🧠 {q}\n\nThink you know the answer? Watch till the end and comment below! 👇\n"
+            "New riddle every day – follow so you don't miss one.\n\n"
+            "#riddles #brainteaser #riddlechallenge #iqtest #shorts")
+    words = [w.lower() for w in re.findall(r"[A-Za-z]{4,}", q)][:4]
+    tags = BASE_TAGS + [f"{w} riddle" for w in words]
+    return {"question": q, "answer": a, "hook": hook, "title": title, "description": desc, "tags": tags}
 
 
 # --------------------------------------------------------------------------- #
-# Media generation
+# Drawing helpers
 # --------------------------------------------------------------------------- #
-SAFE_SUFFIX = (", vertical composition, epic cinematic scene, highly detailed, vivid colors, "
-               "no people, no humans, no person, no text, no watermark, safe for work")
-BANNED = re.compile(r"\b(woman|women|girl|man|men|boy|person|people|human|humanoid|avatar|body|nude|"
-                    r"naked|sexy|lady|figure|model|bikini|skin)\b", re.I)
-
-
-def safe_prompt(prompt):
-    """Strip anything that tends to produce people/bodies (YouTube safety + likeness)."""
-    p = BANNED.sub("", prompt)
-    p = re.sub(r"\b9:16\b|vertical cinematic shot:?", "", p, flags=re.I)
-    return re.sub(r"\s{2,}", " ", p).strip(" ,.") + SAFE_SUFFIX
-
-
-def gen_image(prompt, path, seed):
-    full = safe_prompt(prompt)
-    for attempt in range(6):
-        url = ("https://image.pollinations.ai/prompt/" + urllib.parse.quote(full) +
-               f"?width={W}&height={H}&nologo=true&safe=true&seed={seed + attempt}&model=flux")
-        try:
-            r = requests.get(url, headers=UA, timeout=180)
-            if r.ok and r.headers.get("content-type", "").startswith("image"):
-                path.write_bytes(r.content)
-                img = Image.open(path).convert("RGB")
-                # free tier stamps a small logo in the bottom-right corner: crop it off
-                img = img.crop((0, 0, img.width, int(img.height * 0.955)))
-                img = cover(img, W, H).filter(ImageFilter.UnsharpMask(radius=2, percent=90, threshold=2))
-                img.save(path, quality=95)
-                return True
-            log(f"image attempt {attempt + 1}: HTTP {r.status_code}")
-        except Exception as e:
-            log(f"image attempt {attempt + 1} failed:", str(e)[:120])
-        time.sleep(15 * (attempt + 1))  # free tier is rate-limited
-    return False
-
-
-def cover(img, w, h):
-    s = max(w / img.width, h / img.height)
-    img = img.resize((int(img.width * s + 0.5), int(img.height * s + 0.5)), Image.LANCZOS)
-    left, top = (img.width - w) // 2, (img.height - h) // 2
-    return img.crop((left, top, left + w, top + h))
-
-
-def fallback_image(path, seed):
-    rnd = random.Random(seed)
-    img = Image.new("RGB", (W, H))
-    d = ImageDraw.Draw(img)
-    c1 = [rnd.randint(0, 120) for _ in range(3)]
-    c2 = [rnd.randint(100, 255) for _ in range(3)]
-    for y in range(H):
-        t = y / H
-        d.line([(0, y), (W, y)], fill=tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3)))
-    for _ in range(40):
-        x, y, r = rnd.randint(0, W), rnd.randint(0, H), rnd.randint(20, 220)
-        d.ellipse([x - r, y - r, x + r, y + r], outline=tuple(rnd.randint(150, 255) for _ in range(3)), width=4)
-    img.filter(ImageFilter.GaussianBlur(3)).save(path, quality=95)
-
-
-def find_font(size):
-    for p in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-              "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-              "C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/segoeuib.ttf",
-              "/System/Library/Fonts/Supplemental/Arial Bold.ttf"):
-        if os.path.exists(p):
-            return ImageFont.truetype(p, size)
+def font(size, weight="ExtraBold"):
+    p = FONTS / f"Poppins-{weight}.ttf"
+    if p.exists():
+        return ImageFont.truetype(str(p), size)
+    for alt in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:/Windows/Fonts/arialbd.ttf"):
+        if os.path.exists(alt):
+            return ImageFont.truetype(alt, size)
     return ImageFont.load_default(size=size)
 
 
-def caption_png(text, path):
-    """Big bold Shorts-style caption with thick outline, transparent background."""
-    text = re.sub(r"[^\x20-\x7E]", "", re.sub("[  -​ ]", " ", re.sub("[‐-―]", "-", text))).upper().strip()
-    font = find_font(92)
-    img = Image.new("RGBA", (W, 520), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    words, lines, cur = text.split(), [], ""
-    for wd in words:
+def wrap(draw, text, fnt, max_w):
+    lines, cur = [], ""
+    for wd in text.split():
         test = (cur + " " + wd).strip()
-        if d.textlength(test, font=font) > W - 140 and cur:
+        if draw.textlength(test, font=fnt) > max_w and cur:
             lines.append(cur)
             cur = wd
         else:
             cur = test
     lines.append(cur)
-    lines = lines[:3]
-    y = (520 - len(lines) * 112) // 2
-    for i, ln in enumerate(lines):
-        tw = d.textlength(ln, font=font)
-        x = (W - tw) / 2
-        fill = (255, 230, 0, 255) if i == 0 else (255, 255, 255, 255)
-        d.text((x + 5, y + 7), ln, font=font, fill=(0, 0, 0, 150), stroke_width=6, stroke_fill=(0, 0, 0, 150))
-        d.text((x, y), ln, font=font, fill=fill, stroke_width=6, stroke_fill=(0, 0, 0, 255))
-        y += 112
-    img.save(path)
+    return lines
 
 
+def fit_text(text, max_w, max_h, start, weight="ExtraBold", min_size=60, spacing=1.18):
+    d = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+    size = start
+    while size > min_size:
+        f = font(size, weight)
+        lines = wrap(d, text, f, max_w)
+        if len(lines) * size * spacing <= max_h:
+            return f, lines, size
+        size -= 6
+    f = font(min_size, weight)
+    return f, wrap(d, text, f, max_w), min_size
+
+
+def rounded_card(w, h, radius, fill, shadow=True, border=None):
+    pad = S(60)
+    img = Image.new("RGBA", (w + pad * 2, h + pad * 2), (0, 0, 0, 0))
+    if shadow:
+        sh = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        ImageDraw.Draw(sh).rounded_rectangle([pad, pad + S(24), pad + w, pad + h + S(24)], radius,
+                                             fill=(0, 0, 0, 140))
+        img = Image.alpha_composite(img, sh.filter(ImageFilter.GaussianBlur(S(28))))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([pad, pad, pad + w, pad + h], radius, fill=fill,
+                        outline=border[0] if border else None, width=border[1] if border else 0)
+    return img, pad
+
+
+def draw_center_lines(img, lines, fnt, size, top, color, stroke=0, stroke_fill=None, spacing=1.18):
+    d = ImageDraw.Draw(img)
+    y = top
+    for ln in lines:
+        tw = d.textlength(ln, font=fnt)
+        d.text(((img.width - tw) / 2, y), ln, font=fnt, fill=color, stroke_width=stroke, stroke_fill=stroke_fill)
+        y += int(size * spacing)
+
+
+def ease_out_back(t):
+    t = max(0.0, min(1.0, t))
+    c1, c3 = 1.70158, 2.70158
+    return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2
+
+
+def ease_out(t):
+    t = max(0.0, min(1.0, t))
+    return 1 - (1 - t) ** 3
+
+
+def make_background(pal, seed):
+    """Tall gradient with soft glowing blobs; we pan through it for motion."""
+    rnd = random.Random(seed)
+    top, bot, acc = pal
+    bh = H + S(900)
+    grad = Image.new("RGB", (1, 256))
+    for y in range(256):
+        t = y / 255
+        grad.putpixel((0, y), tuple(int(top[i] + (bot[i] - top[i]) * t) for i in range(3)))
+    bg = grad.resize((W, bh), Image.BICUBIC)
+    glow = Image.new("RGBA", (W, bh), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    for _ in range(9):
+        r = rnd.randint(S(250), S(700))
+        x, y = rnd.randint(0, W), rnd.randint(0, bh)
+        c = acc if rnd.random() < 0.4 else (255, 255, 255)
+        gd.ellipse([x - r, y - r, x + r, y + r], fill=c + (rnd.randint(18, 40),))
+    glow = glow.filter(ImageFilter.GaussianBlur(S(160)))
+    bg = Image.alpha_composite(bg.convert("RGBA"), glow).convert("RGB")
+    # subtle diagonal pattern
+    pat = Image.new("RGBA", (W, bh), (0, 0, 0, 0))
+    pd = ImageDraw.Draw(pat)
+    step = S(140)
+    for k in range(-bh, W + bh, step):
+        pd.line([(k, 0), (k + bh, bh)], fill=(255, 255, 255, 10), width=S(18))
+    return Image.alpha_composite(bg.convert("RGBA"), pat).convert("RGB")
+
+
+# --------------------------------------------------------------------------- #
+# Audio
+# --------------------------------------------------------------------------- #
 async def _tts(text, path, rate):
     import edge_tts
     await edge_tts.Communicate(text, VOICE, rate=rate).save(str(path))
 
 
-def make_voice(text, path):
-    for rate in ("+8%", "+20%", "+32%"):
-        try:
-            asyncio.run(_tts(text, path, rate))
-        except Exception as e:
-            log("tts failed:", e)
-            return False
-        if probe_duration(path) <= DURATION - 0.6:
-            return True
-    return True  # will be trimmed by -t
+async def edge_tts_save(text, path, rate, voice):
+    import edge_tts
+    await edge_tts.Communicate(text, voice, rate=rate).save(str(path))
 
 
 def probe_duration(path):
@@ -488,120 +401,237 @@ def probe_duration(path):
     return int(m[1]) * 3600 + int(m[2]) * 60 + float(m[3]) if m else 0.0
 
 
-def run(cmd):
-    log("ffmpeg:", " ".join(cmd[:6]), "...")
-    p = subprocess.run(cmd, capture_output=True, text=True)
+def tts(text, path, max_len):
+    global VOICE
+    for rate in ("+5%", "+15%", "+25%", "+35%"):
+        for attempt, voice in enumerate([VOICE, VOICE, "en-US-GuyNeural", "en-US-ChristopherNeural"]):
+            try:
+                asyncio.run(_tts(text, path, rate)) if voice == VOICE else \
+                    asyncio.run(edge_tts_save(text, path, rate, voice))
+                break
+            except Exception as e:
+                log(f"tts attempt {attempt + 1} failed:", e)
+        else:
+            return 0.0
+        dur = probe_duration(path)
+        if dur <= max_len:
+            return dur
+    return probe_duration(path)
+
+
+def run(cmd, **kw):
+    p = subprocess.run(cmd, capture_output=True, text=True, **kw)
     if p.returncode != 0:
         log(p.stderr[-2500:])
         raise RuntimeError("ffmpeg failed")
 
 
-MOTIONS = [
-    # zoom in to centre
-    "z='min(zoom+{s},1.22)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'",
-    # zoom out from centre
-    "z='if(eq(on,0),1.22,max(zoom-{s},1.0))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'",
-    # slow pan up while zoomed
-    "z='1.18':x='iw/2-(iw/zoom/2)':y='(ih-ih/zoom)*(1-on/{f})'",
-    # zoom in towards top
-    "z='min(zoom+{s},1.22)':x='iw/2-(iw/zoom/2)':y='0'",
-]
-TRANSITIONS = ["fade", "slideup", "circleopen", "smoothup", "radial", "dissolve", "zoomin", "wipeleft"]
+def sfx(workdir):
+    """Original sound effects synthesised with ffmpeg (no copyright)."""
+    fx = {
+        "whoosh": "anoisesrc=d=0.45:c=pink:a=0.5,highpass=f=300,lowpass=f=5000,"
+                  "afade=t=in:d=0.15,afade=t=out:st=0.2:d=0.25",
+        "pop": "aevalsrc='0.6*sin(2*PI*(500+900*t)*t)*exp(-14*t)':d=0.25",
+        "tick": "aevalsrc='0.55*sin(2*PI*1350*t)*exp(-60*t)':d=0.12",
+        "ding": "aevalsrc='0.45*(sin(2*PI*1046*t)+0.6*sin(2*PI*1568*t)+0.3*sin(2*PI*2093*t))*exp(-3.5*t)':d=1.4",
+        "pad": f"aevalsrc='0.05*(sin(2*PI*220*t)+sin(2*PI*261.6*t)+sin(2*PI*329.6*t))"
+               f"*(0.7+0.3*sin(2*PI*0.25*t))':d={D}",
+    }
+    out = {}
+    for name, expr in fx.items():
+        p = workdir / f"{name}.wav"
+        run([FFMPEG, "-y", "-f", "lavfi", "-i", expr, "-ar", "44100", "-ac", "2", str(p)])
+        out[name] = p
+    return out
 
 
+# --------------------------------------------------------------------------- #
+# Render
+# --------------------------------------------------------------------------- #
 def render(meta, workdir, final_path):
-    seg = (DURATION + (NUM_SCENES - 1) * XFADE) / NUM_SCENES
-    frames = int(round(seg * FPS))
-    base_seed = random.randint(1, 10**7)
+    pal = random.choice(PALETTES)
+    top, bot, acc = pal
+    seed = random.randint(1, 10**7)
+    rnd = random.Random(seed)
 
-    images = []
-    for i, prompt in enumerate(meta["scenes"]):
-        img = workdir / f"scene{i}.jpg"
-        if i:
-            time.sleep(6)
-        ok = gen_image(prompt, img, base_seed + i * 101)
-        log(f"scene {i + 1}: {'AI image' if ok else 'FAILED'}")
-        images.append(img if ok else None)
-    good = [p for p in images if p]
-    if not good:
-        raise RuntimeError("No AI images could be generated - skipping this run, will retry next hour.")
-    # if one scene failed, reuse a good one mirrored (different motion) instead of a placeholder
-    for i, p in enumerate(images):
-        if p is None:
-            src = good[i % len(good)]
-            dst = workdir / f"scene{i}.jpg"
-            Image.open(src).transpose(Image.FLIP_LEFT_RIGHT).save(dst, quality=95)
-            images[i] = dst
+    # ---- audio first (timeline depends on voice length) ----
+    qv, av = workdir / "q.mp3", workdir / "a.mp3"
+    q_start = 0.55
+    q_len = tts(meta["question"], qv, max_len=min(4.2, D - 6.0))
+    a_text = f"It's {meta['answer']}!" if not meta["answer"][0].isdigit() else f"The answer is {meta['answer']}!"
+    a_len = tts(a_text, av, max_len=1.8)
+    cd_start = max(q_start + q_len + 0.15, 3.2)
+    cd_start = min(cd_start, D - 5.2)
+    reveal = cd_start + 3.0
+    cta_t = min(reveal + 1.3, D - 1.2)
+    log(f"timeline: voice {q_len:.1f}s, countdown {cd_start:.1f}s, reveal {reveal:.1f}s")
 
-    clips = []
-    motions = random.sample(MOTIONS, k=min(NUM_SCENES, len(MOTIONS)))
-    for i, img in enumerate(images):
-        motion = motions[i % len(motions)].format(s=f"{0.22 / frames:.5f}", f=frames)
-        clip = workdir / f"clip{i}.mp4"
-        run([FFMPEG, "-y", "-i", str(img), "-vf",
-             f"scale={W * 2}:{H * 2},zoompan={motion}:d={frames}:s={W}x{H}:fps={FPS},"
-             f"eq=contrast=1.06:saturation=1.15,format=yuv420p",
-             "-frames:v", str(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", str(clip)])
-        clips.append(clip)
+    # ---- static layers ----
+    bg = make_background(pal, seed)
 
-    caps = []
-    for i, c in enumerate(meta["captions"]):
-        p = workdir / f"cap{i}.png"
-        caption_png(c, p)
-        caps.append(p)
+    hook_f = font(S(132), "Black")
+    d0 = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+    hook_w = int(d0.textlength(meta["hook"], font=hook_f)) + S(160)
+    hook_img, hp = rounded_card(hook_w, S(230), S(115), acc + (255,))
+    draw_center_lines(hook_img, [meta["hook"]], hook_f, S(132), hp + S(30), (20, 20, 30))
 
-    voice = workdir / "voice.mp3"
-    has_voice = make_voice(meta["narration"], voice)
-    music = sorted([p for p in MUSIC_DIR.glob("*") if p.suffix.lower() in (".mp3", ".wav", ".m4a")]) \
+    tag_f = font(S(80), "SemiBold")
+    tag_img = Image.new("RGBA", (W, S(140)), (0, 0, 0, 0))
+    draw_center_lines(tag_img, ["🧠  RIDDLE  •  ANSWER IN 3 SECONDS".replace("🧠  ", "")], tag_f, S(80), 0,
+                      (255, 255, 255, 220))
+
+    cw, ch = S(1860), S(1250)
+    q_f, q_lines, q_size = fit_text(meta["question"], cw - S(220), ch - S(240), S(170))
+    card, cp = rounded_card(cw, ch, S(90), (255, 255, 255, 255))
+    text_h = int(len(q_lines) * q_size * 1.18)
+    draw_center_lines(card, q_lines, q_f, q_size, cp + (ch - text_h) // 2 - S(10), (17, 24, 39))
+    # little "?" badge
+    bd = ImageDraw.Draw(card)
+    br = S(95)
+    bx, by = cp + cw - S(60), cp + S(40)
+    bd.ellipse([bx - br, by - br, bx + br, by + br], fill=acc + (255,), outline=(255, 255, 255), width=S(14))
+    qf = font(S(130), "Black")
+    bd.text((bx - bd.textlength("?", font=qf) / 2, by - S(98)), "?", font=qf, fill=(20, 20, 30))
+
+    aw, ah = S(1700), S(560)
+    a_f, a_lines, a_size = fit_text(meta["answer"].upper(), aw - S(160), ah - S(250), S(190), "Black")
+    ans, ap = rounded_card(aw, ah, S(80), (34, 197, 94, 255), border=((255, 255, 255, 255), S(14)))
+    lab_f = font(S(70), "SemiBold")
+    draw_center_lines(ans, ["ANSWER"], lab_f, S(70), ap + S(45), (220, 252, 231))
+    a_text_h = int(len(a_lines) * a_size * 1.1)
+    draw_center_lines(ans, a_lines, a_f, a_size, ap + S(140) + (ah - S(160) - a_text_h) // 2 - S(20),
+                      (255, 255, 255), stroke=S(6), stroke_fill=(21, 128, 61), spacing=1.1)
+
+    cta_f = font(S(96), "ExtraBold")
+    cta_img = Image.new("RGBA", (W, S(360)), (0, 0, 0, 0))
+    draw_center_lines(cta_img, ["Did you get it right?", "Comment below 👇".replace(" 👇", "!")],
+                      cta_f, S(96), S(20), (255, 255, 255), stroke=S(8), stroke_fill=(0, 0, 0))
+
+    num_f = font(S(300), "Black")
+    particles = [(rnd.uniform(0, W), rnd.uniform(0, H), rnd.uniform(S(6), S(22)), rnd.uniform(S(40), S(160)))
+                 for _ in range(45)]
+
+    card_y = S(1000)
+    ring_cy = card_y + ch + S(470)
+    ans_y = card_y + ch + S(110)
+
+    def paste_scaled(frame, layer, cx, cy, scale, alpha=1.0):
+        if scale <= 0.01 or alpha <= 0.01:
+            return
+        L = layer
+        if abs(scale - 1) > 0.005:
+            L = layer.resize((max(1, int(layer.width * scale)), max(1, int(layer.height * scale))),
+                             Image.BILINEAR)
+        if alpha < 0.999:
+            a = L.getchannel("A").point(lambda v: int(v * alpha))
+            L = L.copy()
+            L.putalpha(a)
+        frame.paste(L, (int(cx - L.width / 2), int(cy - L.height / 2)), L)
+
+    # ---- frames -> ffmpeg ----
+    silent = workdir / "video.mp4"
+    enc = subprocess.Popen(
+        [FFMPEG, "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
+         "-c:v", "libx264", "-preset", os.getenv("X264_PRESET", "fast"), "-crf", "18",
+         "-threads", "4", "-x264-params", "rc-lookahead=10", "-pix_fmt", "yuv420p", str(silent)],
+        stdin=subprocess.PIPE, stderr=open(workdir / "encode.log", "w"))
+
+    total = int(D * FPS)
+    for fi in range(total):
+        t = fi / FPS
+        off = int((math.sin(t * 0.6) * 0.5 + 0.5) * S(900))
+        frame = bg.crop((0, off, W, off + H))
+        fd = ImageDraw.Draw(frame)
+
+        for (px, py, pr, sp) in particles:
+            y = (py - sp * t * 2) % H
+            fd.ellipse([px - pr, y - pr, px + pr, y + pr], fill=tuple(min(255, c + 60) for c in top))
+
+        # hook banner slides down + gentle pulse
+        hk = ease_out_back(t / 0.5)
+        pulse = 1 + 0.025 * math.sin(t * 6) if t > 0.6 else 1
+        paste_scaled(frame, hook_img, W / 2, -S(200) + (S(420) + S(200)) * hk, pulse)
+        if t > 0.5:
+            paste_scaled(frame, tag_img, W / 2, S(700), 1, ease_out((t - 0.5) / 0.4))
+
+        # question card pops in, shrinks slightly at reveal
+        cs = ease_out_back((t - 0.35) / 0.45)
+        if t >= reveal:
+            cs *= 1 - 0.06 * ease_out((t - reveal) / 0.4)
+        paste_scaled(frame, card, W / 2, card_y + ch / 2, cs)
+
+        # countdown ring
+        if cd_start <= t < reveal:
+            lt = t - cd_start
+            n = 3 - int(lt)
+            frac = 1 - (lt % 1.0)
+            R = S(260)
+            box = [W / 2 - R, ring_cy - R, W / 2 + R, ring_cy + R]
+            fd.ellipse([box[0] - S(30), box[1] - S(30), box[2] + S(30), box[3] + S(30)], fill=(0, 0, 0))
+            fd.arc(box, 0, 360, fill=(70, 70, 90), width=S(44))
+            fd.arc(box, -90, -90 + 360 * frac, fill=acc, width=S(44))
+            pop = 1 + 0.25 * (1 - ease_out((lt % 1.0) / 0.25))
+            nf = font(int(S(300) * pop), "Black")
+            s = str(n)
+            tw = fd.textlength(s, font=nf)
+            fd.text((W / 2 - tw / 2, ring_cy - nf.size * 0.62), s, font=nf, fill=(255, 255, 255))
+            think_f = font(S(80), "SemiBold")
+            msg = "THINK FAST..."
+            fd.text((W / 2 - fd.textlength(msg, font=think_f) / 2, ring_cy + R + S(70)), msg,
+                    font=think_f, fill=(255, 255, 255))
+
+        # answer reveal
+        if t >= reveal:
+            rt = t - reveal
+            if rt < 0.12:  # flash
+                frame = Image.blend(frame, Image.new("RGB", frame.size, (255, 255, 255)), 0.55 * (1 - rt / 0.12))
+            paste_scaled(frame, ans, W / 2, ans_y + ah / 2 + S(40), ease_out_back(rt / 0.4))
+        if t >= cta_t:
+            paste_scaled(frame, cta_img, W / 2, ans_y + ah + S(330), 1, ease_out((t - cta_t) / 0.4))
+
+        # progress bar
+        fd = ImageDraw.Draw(frame)
+        fd.rectangle([0, H - S(26), int(W * t / D), H], fill=acc)
+
+        enc.stdin.write(frame.tobytes())
+    enc.stdin.close()
+    enc.wait()
+    if enc.returncode != 0:
+        raise RuntimeError("video encode failed")
+
+    # ---- audio mix ----
+    fx = sfx(workdir)
+    music = sorted(p for p in MUSIC_DIR.glob("*") if p.suffix.lower() in (".mp3", ".wav", ".m4a")) \
         if MUSIC_DIR.exists() else []
-    track = random.choice(music) if music else None
+    bed = random.choice(music) if music else fx["pad"]
+    events = [(fx["whoosh"], 0.0, 0.9), (fx["pop"], 0.4, 0.8)]
+    if q_len:
+        events.append((qv, q_start, 1.7))
+    events += [(fx["tick"], cd_start + k, 1.0) for k in range(3)]
+    events.append((fx["ding"], reveal, 0.9))
+    if a_len:
+        events.append((av, reveal + 0.15, 1.8))
+    events.append((fx["pop"], cta_t, 0.5))
 
-    cmd = [FFMPEG, "-y"]
-    for c in clips:
-        cmd += ["-i", str(c)]
-    for c in caps:
-        cmd += ["-i", str(c)]
-    if has_voice:
-        cmd += ["-i", str(voice)]
-    if track:
-        cmd += ["-stream_loop", "-1", "-i", str(track)]
-
-    n = NUM_SCENES
-    fc, prev = [], "[0:v]"
-    for i in range(1, n):
-        off = i * (seg - XFADE)
-        tr = random.choice(TRANSITIONS)
-        fc.append(f"{prev}[{i}:v]xfade=transition={tr}:duration={XFADE}:offset={off:.3f}[x{i}]")
-        prev = f"[x{i}]"
-    for i in range(n):
-        start = 0.15 + i * (seg - XFADE)
-        end = start + seg - XFADE + (XFADE if i == n - 1 else 0)
-        fc.append(f"{prev}[{n + i}:v]overlay=0:{int(H * 0.60)}:enable='between(t,{start:.2f},{end:.2f})'[o{i}]")
-        prev = f"[o{i}]"
-    fc.append(f"{prev}format=yuv420p[vout]")
-
-    ai = 2 * n
-    audio = []
-    if has_voice:
-        fc.append(f"[{ai}:a]aresample=44100,adelay=delays=250:all=1,volume=1.6,apad[va]")
-        audio.append("[va]")
-        ai += 1
-    if track:
-        fc.append(f"[{ai}:a]volume=0.12,afade=t=out:st={DURATION - 1.2}:d=1.2[ma]")
-        audio.append("[ma]")
-    if len(audio) == 2:
-        fc.append("[va][ma]amix=inputs=2:duration=first:normalize=0[aout]")
-    elif len(audio) == 1:
-        fc.append(f"{audio[0]}anull[aout]")
-    else:
-        fc.append(f"anullsrc=r=44100:cl=stereo[aout]")
-
-    cmd += ["-filter_complex", ";".join(fc), "-map", "[vout]", "-map", "[aout]",
-            "-t", f"{DURATION}", "-r", str(FPS), "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-            "-profile:v", "high", "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
-            "-movflags", "+faststart", str(final_path)]
+    cmd = [FFMPEG, "-y", "-i", str(silent)]
+    fc, labels = [], []
+    for i, (src, at, vol) in enumerate(events):
+        cmd += ["-i", str(src)]
+        ms = int(at * 1000)
+        fc.append(f"[{i + 1}:a]aresample=44100,aformat=channel_layouts=stereo,"
+                  f"adelay={ms}|{ms},volume={vol}[e{i}]")
+        labels.append(f"[e{i}]")
+    cmd += ["-stream_loop", "-1", "-i", str(bed)]
+    bi = len(events) + 1
+    fc.append(f"[{bi}:a]aresample=44100,aformat=channel_layouts=stereo,volume={0.18 if music else 1.0},"
+              f"afade=t=out:st={D - 1}:d=1[bed]")
+    labels.append("[bed]")
+    fc.append(f"{''.join(labels)}amix=inputs={len(labels)}:duration=longest:normalize=0,"
+              f"alimiter=limit=0.95,atrim=0:{D}[aout]")
+    cmd += ["-filter_complex", ";".join(fc), "-map", "0:v", "-map", "[aout]", "-t", str(D),
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(final_path)]
     run(cmd)
-    log("video ready:", final_path, f"({probe_duration(final_path):.1f}s)")
+    log("video ready:", final_path, f"{W}x{H}, {probe_duration(final_path):.1f}s")
 
 
 # --------------------------------------------------------------------------- #
@@ -642,14 +672,15 @@ def main():
     if not FFMPEG:
         sys.exit("ffmpeg is not installed.")
 
-    trending = trending_signals(yt)
-    log(f"trending signals: {len(trending)}")
-    meta = write_script(trending, history)
+    q, a, src = pick_riddle(history)
+    meta = build_meta(q, a, random.choice(HOOKS))
+    meta["source"] = src
+    log(f"riddle ({src}): {q} -> {a}")
 
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
     workdir = OUT / stamp
     workdir.mkdir(parents=True, exist_ok=True)
-    final = OUT / f"short-{stamp}.mp4"
+    final = OUT / f"riddle-{stamp}.mp4"
     (workdir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     render(meta, workdir, final)
 
@@ -659,7 +690,7 @@ def main():
 
     vid = upload(yt, final, meta)
     history.append({"time": dt.datetime.now(dt.timezone.utc).isoformat(), "title": meta["title"],
-                    "video_id": vid, "writer": meta.get("writer")})
+                    "question": q, "answer": a, "video_id": vid})
     save_history(history)
 
 
