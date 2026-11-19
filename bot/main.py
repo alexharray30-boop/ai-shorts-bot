@@ -55,6 +55,21 @@ SCOPES = [
 UA = {"User-Agent": "ai-shorts-bot/1.0"}
 
 
+def _find_ffmpeg():
+    if os.getenv("FFMPEG"):
+        return os.environ["FFMPEG"]
+    if shutil.which("ffmpeg"):
+        return "ffmpeg"
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+
+FFMPEG = _find_ffmpeg()
+
+
 def log(*a):
     print("[bot]", *a, flush=True)
 
@@ -231,6 +246,10 @@ STRICT RULES (copyright & safety):
 - NO real people, celebrities, politicians, brand names, logos, or copyrighted characters/franchises.
 - Use generic, descriptive concepts only (e.g. "a futuristic London", not a specific film).
 - Family-friendly, no tragedies, no misinformation.
+- Scenes must show places, landscapes, cities, vehicles, animals, creatures, robots or objects.
+  NEVER people, human bodies or human-like figures.
+- Keep it simple and visual: each scene clearly shows the idea at a glance (scroll-stopping, bright, epic).
+- Captions: plain simple English words (no hyphens or fancy words).
 
 Return ONLY valid JSON with these keys:
 {{
@@ -352,24 +371,38 @@ def write_script(trending, history):
 # --------------------------------------------------------------------------- #
 # Media generation
 # --------------------------------------------------------------------------- #
+SAFE_SUFFIX = (", vertical composition, epic cinematic scene, highly detailed, vivid colors, "
+               "no people, no humans, no person, no text, no watermark, safe for work")
+BANNED = re.compile(r"\b(woman|women|girl|man|men|boy|person|people|human|humanoid|avatar|body|nude|"
+                    r"naked|sexy|lady|figure|model|bikini|skin)\b", re.I)
+
+
+def safe_prompt(prompt):
+    """Strip anything that tends to produce people/bodies (YouTube safety + likeness)."""
+    p = BANNED.sub("", prompt)
+    p = re.sub(r"\b9:16\b|vertical cinematic shot:?", "", p, flags=re.I)
+    return re.sub(r"\s{2,}", " ", p).strip(" ,.") + SAFE_SUFFIX
+
+
 def gen_image(prompt, path, seed):
-    full = f"{prompt}, vertical composition, highly detailed, cinematic, 8k, no text, no watermark"
-    url = ("https://image.pollinations.ai/prompt/" + urllib.parse.quote(full) +
-           f"?width={W}&height={H}&nologo=true&enhance=true&seed={seed}&model=flux")
-    for attempt in range(4):
+    full = safe_prompt(prompt)
+    for attempt in range(6):
+        url = ("https://image.pollinations.ai/prompt/" + urllib.parse.quote(full) +
+               f"?width={W}&height={H}&nologo=true&safe=true&seed={seed + attempt}&model=flux")
         try:
             r = requests.get(url, headers=UA, timeout=180)
             if r.ok and r.headers.get("content-type", "").startswith("image"):
                 path.write_bytes(r.content)
                 img = Image.open(path).convert("RGB")
-                img = cover(img, W, H)
+                # free tier stamps a small logo in the bottom-right corner: crop it off
+                img = img.crop((0, 0, img.width, int(img.height * 0.955)))
+                img = cover(img, W, H).filter(ImageFilter.UnsharpMask(radius=2, percent=90, threshold=2))
                 img.save(path, quality=95)
                 return True
             log(f"image attempt {attempt + 1}: HTTP {r.status_code}")
         except Exception as e:
             log(f"image attempt {attempt + 1} failed:", str(e)[:120])
-        time.sleep(8 * (attempt + 1))
-    fallback_image(path, seed)
+        time.sleep(15 * (attempt + 1))  # free tier is rate-limited
     return False
 
 
@@ -407,7 +440,7 @@ def find_font(size):
 
 def caption_png(text, path):
     """Big bold Shorts-style caption with thick outline, transparent background."""
-    text = text.upper().strip()
+    text = re.sub(r"[^\x20-\x7E]", "", re.sub("[  -​ ]", " ", re.sub("[‐-―]", "-", text))).upper().strip()
     font = find_font(92)
     img = Image.new("RGBA", (W, 520), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -426,7 +459,8 @@ def caption_png(text, path):
         tw = d.textlength(ln, font=font)
         x = (W - tw) / 2
         fill = (255, 230, 0, 255) if i == 0 else (255, 255, 255, 255)
-        d.text((x, y), ln, font=font, fill=fill, stroke_width=9, stroke_fill=(0, 0, 0, 255))
+        d.text((x + 5, y + 7), ln, font=font, fill=(0, 0, 0, 150), stroke_width=6, stroke_fill=(0, 0, 0, 150))
+        d.text((x, y), ln, font=font, fill=fill, stroke_width=6, stroke_fill=(0, 0, 0, 255))
         y += 112
     img.save(path)
 
@@ -449,12 +483,9 @@ def make_voice(text, path):
 
 
 def probe_duration(path):
-    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                          "-of", "default=nw=1:nk=1", str(path)], capture_output=True, text=True)
-    try:
-        return float(out.stdout.strip())
-    except ValueError:
-        return 0.0
+    out = subprocess.run([FFMPEG, "-hide_banner", "-i", str(path)], capture_output=True, text=True)
+    m = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", out.stderr)
+    return int(m[1]) * 3600 + int(m[2]) * 60 + float(m[3]) if m else 0.0
 
 
 def run(cmd):
@@ -483,14 +514,31 @@ def render(meta, workdir, final_path):
     frames = int(round(seg * FPS))
     base_seed = random.randint(1, 10**7)
 
-    clips = []
+    images = []
     for i, prompt in enumerate(meta["scenes"]):
         img = workdir / f"scene{i}.jpg"
-        ok = gen_image(prompt, img, base_seed + i)
-        log(f"scene {i + 1}: {'AI image' if ok else 'fallback image'}")
-        motion = random.choice(MOTIONS).format(s=f"{0.22 / frames:.5f}", f=frames)
+        if i:
+            time.sleep(6)
+        ok = gen_image(prompt, img, base_seed + i * 101)
+        log(f"scene {i + 1}: {'AI image' if ok else 'FAILED'}")
+        images.append(img if ok else None)
+    good = [p for p in images if p]
+    if not good:
+        raise RuntimeError("No AI images could be generated - skipping this run, will retry next hour.")
+    # if one scene failed, reuse a good one mirrored (different motion) instead of a placeholder
+    for i, p in enumerate(images):
+        if p is None:
+            src = good[i % len(good)]
+            dst = workdir / f"scene{i}.jpg"
+            Image.open(src).transpose(Image.FLIP_LEFT_RIGHT).save(dst, quality=95)
+            images[i] = dst
+
+    clips = []
+    motions = random.sample(MOTIONS, k=min(NUM_SCENES, len(MOTIONS)))
+    for i, img in enumerate(images):
+        motion = motions[i % len(motions)].format(s=f"{0.22 / frames:.5f}", f=frames)
         clip = workdir / f"clip{i}.mp4"
-        run(["ffmpeg", "-y", "-i", str(img), "-vf",
+        run([FFMPEG, "-y", "-i", str(img), "-vf",
              f"scale={W * 2}:{H * 2},zoompan={motion}:d={frames}:s={W}x{H}:fps={FPS},"
              f"eq=contrast=1.06:saturation=1.15,format=yuv420p",
              "-frames:v", str(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", str(clip)])
@@ -508,7 +556,7 @@ def render(meta, workdir, final_path):
         if MUSIC_DIR.exists() else []
     track = random.choice(music) if music else None
 
-    cmd = ["ffmpeg", "-y"]
+    cmd = [FFMPEG, "-y"]
     for c in clips:
         cmd += ["-i", str(c)]
     for c in caps:
@@ -591,7 +639,7 @@ def main():
         gh_output("due", "true")
         return
 
-    if not shutil.which("ffmpeg"):
+    if not FFMPEG:
         sys.exit("ffmpeg is not installed.")
 
     trending = trending_signals(yt)
