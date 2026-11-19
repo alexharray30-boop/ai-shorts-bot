@@ -46,6 +46,7 @@ W, H = int(2160 * SCALE), int(3840 * SCALE)
 FPS = 30
 D = float(os.getenv("VIDEO_SECONDS", "10"))
 MIN_HOURS = float(os.getenv("MIN_HOURS_BETWEEN_UPLOADS", "10"))
+KIDS_SHARE = float(os.getenv("KIDS_SHARE", "0.7"))  # 70% kids videos, 30% riddles
 PRIVACY = os.getenv("PRIVACY_STATUS", "public")
 VOICE = os.getenv("TTS_VOICE", "en-US-AndrewMultilingualNeural")
 SCOPES = [
@@ -151,7 +152,7 @@ def upload(yt, path, meta):
             "defaultLanguage": "en",
             "defaultAudioLanguage": "en",
         },
-        "status": {"privacyStatus": PRIVACY, "selfDeclaredMadeForKids": False,
+        "status": {"privacyStatus": PRIVACY, "selfDeclaredMadeForKids": bool(meta.get("made_for_kids")),
                    "containsSyntheticMedia": False},
     }
 
@@ -436,6 +437,18 @@ def sfx(workdir):
         "ding": "aevalsrc='0.45*(sin(2*PI*1046*t)+0.6*sin(2*PI*1568*t)+0.3*sin(2*PI*2093*t))*exp(-3.5*t)':d=1.4",
         "pad": f"aevalsrc='0.05*(sin(2*PI*220*t)+sin(2*PI*261.6*t)+sin(2*PI*329.6*t))"
                f"*(0.7+0.3*sin(2*PI*0.25*t))':d={D}",
+        # cheerful rising arpeggio
+        "yay": "aevalsrc='0.35*sin(2*PI*if(lt(t,0.1),523,if(lt(t,0.2),659,if(lt(t,0.3),784,1046)))*t)"
+               "*exp(-5*mod(t,0.1))*if(lt(t,0.3),1,exp(-4*(t-0.3)))':d=1.0",
+        # happy bouncy kids music loop (C - Am - F - G), original
+        "music": "aevalsrc='0.06*sin(2*PI*if(lt(mod(t,8),2),if(eq(mod(trunc(t*4),4),0),523,if(eq(mod(trunc(t*4),4),1),659,"
+                 "if(eq(mod(trunc(t*4),4),2),784,659))),if(lt(mod(t,8),4),if(eq(mod(trunc(t*4),4),0),440,"
+                 "if(eq(mod(trunc(t*4),4),1),523,if(eq(mod(trunc(t*4),4),2),659,523))),if(lt(mod(t,8),6),"
+                 "if(eq(mod(trunc(t*4),4),0),349,if(eq(mod(trunc(t*4),4),1),440,if(eq(mod(trunc(t*4),4),2),523,440))),"
+                 "if(eq(mod(trunc(t*4),4),0),392,if(eq(mod(trunc(t*4),4),1),494,if(eq(mod(trunc(t*4),4),2),587,494))))))*t)"
+                 "*exp(-7*mod(t,0.25))"
+                 "+0.07*sin(2*PI*if(lt(mod(t,8),2),131,if(lt(mod(t,8),4),110,if(lt(mod(t,8),6),87,98)))*t)"
+                 f"*exp(-4*mod(t,0.5))':d={D}",
     }
     out = {}
     for name, expr in fx.items():
@@ -649,6 +662,7 @@ def main():
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--check-only", action="store_true")
+    ap.add_argument("--format", choices=["kids", "riddle", "guess_animal", "count", "colors", "odd_one_out"])
     args = ap.parse_args()
 
     history = load_history()
@@ -672,17 +686,32 @@ def main():
     if not FFMPEG:
         sys.exit("ffmpeg is not installed.")
 
-    q, a, src = pick_riddle(history)
-    meta = build_meta(q, a, random.choice(HOOKS))
-    meta["source"] = src
-    log(f"riddle ({src}): {q} -> {a}")
-
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
     workdir = OUT / stamp
     workdir.mkdir(parents=True, exist_ok=True)
-    final = OUT / f"riddle-{stamp}.mp4"
+    final = OUT / f"short-{stamp}.mp4"
+
+    fmt = args.format
+    if fmt is None:
+        fmt = "kids" if random.random() < KIDS_SHARE else "riddle"
+
+    meta = None
+    if fmt != "riddle":
+        try:
+            import kids
+            pick = kids.make(sys.modules[__name__])
+            meta = pick(workdir, final, history, None if fmt == "kids" else fmt)
+            log(f"kids video ({meta['format']}): {meta['title']}")
+        except Exception as e:
+            log("kids format failed, falling back to riddle:", e)
+            meta = None
+    if meta is None:
+        q, a, src = pick_riddle(history)
+        meta = build_meta(q, a, random.choice(HOOKS))
+        meta.update(source=src, format="riddle", key=f"riddle:{q.lower()}", made_for_kids=False)
+        log(f"riddle ({src}): {q} -> {a}")
+        render(meta, workdir, final)
     (workdir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-    render(meta, workdir, final)
 
     if args.dry_run:
         log("dry run - not uploading.")
@@ -690,7 +719,8 @@ def main():
 
     vid = upload(yt, final, meta)
     history.append({"time": dt.datetime.now(dt.timezone.utc).isoformat(), "title": meta["title"],
-                    "question": q, "answer": a, "video_id": vid})
+                    "format": meta["format"], "key": meta["key"], "question": meta.get("question", ""),
+                    "video_id": vid})
     save_history(history)
 
 
