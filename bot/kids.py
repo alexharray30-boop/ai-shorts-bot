@@ -17,6 +17,7 @@ import requests
 from PIL import Image, ImageDraw, ImageFilter
 
 M = None  # main module (set by make())
+FORCE_PAL = None  # keeps one colour theme across all rounds of a long video
 
 KID_VOICE = "en-US-AnaNeural"
 EMOJI_URL = "https://fonts.gstatic.com/s/e/notoemoji/latest/{code}/512.png"
@@ -258,7 +259,7 @@ def countdown(frame, d, t, start, cx, cy, acc):
 def guess_animal(workdir, final, used):
     choices = [a for a in ANIMALS if f"animal:{a[0]}" not in used] or ANIMALS
     name, code = random.choice(choices)
-    pal = random.choice(KID_PALETTES)
+    pal = FORCE_PAL or random.choice(KID_PALETTES)
     sc = Scene(workdir, pal)
     acc = pal[2] if pal[2] != (255, 255, 255) else (250, 204, 21)
 
@@ -320,9 +321,10 @@ def guess_animal(workdir, final, used):
 
 
 def count(workdir, final, used):
-    item, code = random.choice(COUNT_ITEMS)
+    fresh = [i for i in COUNT_ITEMS if not any(k.startswith(f"count:{i[0]}:") for k in used)]
+    item, code = random.choice(fresh or COUNT_ITEMS)
     n = random.randint(5, 9)
-    pal = random.choice(KID_PALETTES)
+    pal = FORCE_PAL or random.choice(KID_PALETTES)
     sc = Scene(workdir, pal)
     acc = pal[2] if pal[2] != (255, 255, 255) else (250, 204, 21)
     size = M.S(520)
@@ -383,7 +385,7 @@ def count(workdir, final, used):
 
 def colors(workdir, final, used):
     picks = random.sample(COLORS, 4)
-    pal = random.choice(KID_PALETTES)
+    pal = FORCE_PAL or random.choice(KID_PALETTES)
     sc = Scene(workdir, pal)
     seg = (M.D - 1.4) / 4
     title = text_banner("LEARN COLORS!", M.S(150), (255, 255, 255), (30, 30, 60))
@@ -436,8 +438,9 @@ def colors(workdir, final, used):
 
 
 def odd_one_out(workdir, final, used):
-    a, b, bname = random.choice(ODD_PAIRS)
-    pal = random.choice(KID_PALETTES)
+    fresh = [p for p in ODD_PAIRS if f"odd:{p[0]}:{p[1]}" not in used]
+    a, b, bname = random.choice(fresh or ODD_PAIRS)
+    pal = FORCE_PAL or random.choice(KID_PALETTES)
     sc = Scene(workdir, pal)
     acc = pal[2] if pal[2] != (255, 255, 255) else (250, 204, 21)
     cols, rows = 4, 5
@@ -499,14 +502,130 @@ def odd_one_out(workdir, final, used):
 FORMATS = [(guess_animal, 3), (count, 2), (colors, 2), (odd_one_out, 2)]
 
 
+# --------------------------------------------------------------------------- #
+# Long (about 1 minute) videos: intro + 5 rounds of one format
+# --------------------------------------------------------------------------- #
+ROUNDS = int(__import__("os").getenv("KIDS_ROUNDS", "5"))
+ROUND_SECONDS = 11.0
+LONG_INFO = {
+    "guess_animal": (["GUESS ALL", "{n} ANIMALS!"], "Can you guess all {n} animals? Let's go!",
+                     ["Guess {n} Animals! 🐾 Fun Shadow Quiz for Kids", "Can You Guess All {n} Animals? 🦁 Kids Quiz",
+                      "Animal Shadow Quiz 🐘 Guess {n} Animals with Me!"]),
+    "count": (["LET'S", "COUNT!"], "Let's count together! Ready?",
+              ["Count With Me! 🔢 {n} Fun Counting Games for Kids", "Let's Count Together! 🍎 Numbers for Kids",
+               "Counting Fun for Toddlers 🔢 Learn Numbers 1 to 9"]),
+    "colors": (["LET'S LEARN", "COLORS!"], "Let's learn colors together!",
+               ["Learn Colors with Fun Objects 🌈 Kids Learning", "Colors for Toddlers 🎨 Learn {n} Rounds of Colors!",
+                "Rainbow Colors for Kids 🌈 Learn & Play"]),
+    "odd_one_out": (["FIND THE", "ODD ONE!"], "Can you find the odd one out? {n} puzzles!",
+                    ["Find the Odd One Out! 👀 {n} Puzzles for Kids", "Spot the Different One! 🔍 {n} Kids Puzzles",
+                     "Odd One Out Challenge 🧩 {n} Fun Puzzles for Kids"]),
+}
+
+
+def intro(workdir, final, lines, voice):
+    pal = FORCE_PAL
+    sc = Scene(workdir, pal)
+    acc = pal[2] if pal[2] != (255, 255, 255) else (250, 204, 21)
+    l1 = big_text(lines[0], M.S(230), stroke=M.S(16))
+    l2 = big_text(lines[1], M.S(300), color=acc, stroke=M.S(18))
+    play = text_banner("LET'S PLAY!", M.S(140), (255, 255, 255), (30, 30, 60))
+    sc.fx_at("whoosh", 0, 0.9)
+    sc.fx_at("yay", 0.5, 0.6)
+    sc.say(voice, 0.3, "intro", max_len=M.D - 0.5)
+    conf = Confetti(M.W / 2, M.S(1700), 0.5, n=120, seed=3)
+
+    def draw(t):
+        f, d = sc.base_frame(t)
+        sc.paste(f, l1, M.W / 2, M.S(1450), M.ease_out_back(t / 0.4))
+        sc.paste(f, l2, M.W / 2, M.S(1850), M.ease_out_back((t - 0.2) / 0.45) * (1 + 0.04 * math.sin(t * 7)))
+        sc.paste(f, play, M.W / 2, M.S(2500), M.ease_out_back((t - 0.6) / 0.4))
+        conf.draw(ImageDraw.Draw(f), t)
+        return f
+
+    sc.encode(draw, final)
+
+
+def badge(text, path):
+    img = text_banner(text, M.S(90), (255, 255, 255), (30, 30, 60))
+    img.save(path)
+    return img
+
+
+def pick_long(workdir, final, history, fn):
+    global FORCE_PAL
+    used = set()
+    for h in history:
+        used.add(h.get("key", ""))
+        used.update(h.get("keys", []))
+    FORCE_PAL = random.choice(KID_PALETTES)
+    name = fn.__name__
+    lines, voice, titles = LONG_INFO[name]
+    n = ROUNDS
+    old_d = M.D
+    clips, badges, metas = [], [], []
+    try:
+        M.D = 3.0
+        iw = workdir / "intro"
+        iw.mkdir(exist_ok=True)
+        intro(iw, iw / "intro.mp4", [lines[0].format(n=n), lines[1].format(n=n)], voice.format(n=n))
+        clips.append(iw / "intro.mp4")
+        M.D = ROUND_SECONDS
+        for r in range(n):
+            rw = workdir / f"round{r + 1}"
+            rw.mkdir(exist_ok=True)
+            m = fn(rw, rw / "round.mp4", used)
+            used.add(m["key"])
+            metas.append(m)
+            clips.append(rw / "round.mp4")
+            badges.append(badge(f"{r + 1} / {n}", rw / "badge.png") and rw / "badge.png")
+            M.log(f"round {r + 1}/{n} done: {m['key']}")
+    finally:
+        M.D = old_d
+        FORCE_PAL = None
+
+    # join: intro + rounds (with "x / n" badge in the top-left corner)
+    cmd = [M.FFMPEG, "-y"]
+    for c in clips:
+        cmd += ["-i", str(c)]
+    for b in badges:
+        cmd += ["-i", str(b)]
+    fc, parts = [], ["[0:v][0:a]"]
+    for r in range(n):
+        vi, bi = r + 1, len(clips) + r
+        fc.append(f"[{vi}:v][{bi}:v]overlay={M.S(30)}:{M.S(40)}[v{r}]")
+        parts.append(f"[v{r}][{vi}:a]")
+    fc.append(f"{''.join(parts)}concat=n={len(clips)}:v=1:a=1[v][a]")
+    cmd += ["-filter_complex", ";".join(fc), "-map", "[v]", "-map", "[a]",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "19", "-threads", "4", "-x264-params", "rc-lookahead=10",
+            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(final)]
+    M.run(cmd)
+
+    items = [m["key"].split(":", 1)[1].split(":")[0] for m in metas]
+    tags = []
+    for m in metas:
+        tags += [t for t in m["tags"] if t not in tags]
+    desc = metas[0]["description"].split("\n\n")[0]
+    if name == "guess_animal":
+        desc += "\n\nAnimals in this video: " + ", ".join(i.title() for i in items) + " 🐾"
+    desc += "\n\nNew fun learning videos for kids every day! 🎉\n\n#kids #kidslearning #toddler #preschool #shorts"
+    return {
+        "format": name + "_long", "key": metas[0]["key"], "keys": [m["key"] for m in metas],
+        "title": random.choice(titles).format(n=n) + " #shorts", "description": desc, "tags": tags,
+    }
+
+
 def pick(workdir, final, history, force_format=None):
     used = {h.get("key", "") for h in history}
     if force_format:
         fn = dict((f.__name__, f) for f, _ in FORMATS)[force_format]
     else:
-        recent = [h.get("format") for h in history[-2:]]
+        recent = [h.get("format", "").replace("_long", "") for h in history[-2:]]
         opts = [(f, w) for f, w in FORMATS if f.__name__ not in recent] or FORMATS
         fn = random.choices([f for f, _ in opts], weights=[w for _, w in opts])[0]
-    meta = fn(workdir, final, used)
+    if ROUNDS > 1:
+        meta = pick_long(workdir, final, history, fn)
+    else:
+        meta = fn(workdir, final, used)
     meta["made_for_kids"] = True
     return meta

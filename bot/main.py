@@ -703,7 +703,9 @@ def main():
             meta = pick(workdir, final, history, None if fmt == "kids" else fmt)
             log(f"kids video ({meta['format']}): {meta['title']}")
         except Exception as e:
-            log("kids format failed, falling back to riddle:", e)
+            import traceback
+            log("kids format failed, falling back to riddle:", repr(e))
+            traceback.print_exc()
             meta = None
     if meta is None:
         q, a, src = pick_riddle(history)
@@ -719,8 +721,8 @@ def main():
 
     vid = upload(yt, final, meta)
     history.append({"time": dt.datetime.now(dt.timezone.utc).isoformat(), "title": meta["title"],
-                    "format": meta["format"], "key": meta["key"], "question": meta.get("question", ""),
-                    "video_id": vid})
+                    "format": meta["format"], "key": meta["key"], "keys": meta.get("keys", []),
+                    "question": meta.get("question", ""), "video_id": vid})
     save_history(history)
 
 
