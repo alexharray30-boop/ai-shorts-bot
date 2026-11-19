@@ -697,16 +697,25 @@ def main():
 
     meta = None
     if fmt != "riddle":
-        try:
-            import kids
-            pick = kids.make(sys.modules[__name__])
-            meta = pick(workdir, final, history, None if fmt == "kids" else fmt)
-            log(f"kids video ({meta['format']}): {meta['title']}")
-        except Exception as e:
-            import traceback
-            log("kids format failed, falling back to riddle:", repr(e))
-            traceback.print_exc()
-            meta = None
+        global SCALE, W, H
+        import traceback
+        import kids
+        scales = [SCALE] + ([0.5] if SCALE > 0.5 else [])  # 4K first, then 1080p as a safety net
+        for attempt, sc in enumerate(scales):
+            SCALE, W, H = sc, int(2160 * sc), int(3840 * sc)
+            wd = workdir if attempt == 0 else workdir / f"retry{attempt}"
+            wd.mkdir(parents=True, exist_ok=True)
+            try:
+                pick = kids.make(sys.modules[__name__])
+                meta = pick(wd, final, history, None if fmt == "kids" else fmt)
+                log(f"kids video ({meta['format']}, {W}x{H}): {meta['title']}")
+                break
+            except Exception as e:
+                log(f"kids video failed at {W}x{H}:", repr(e))
+                traceback.print_exc()
+                meta = None
+        if meta is None and fmt != "kids":
+            sys.exit("kids video could not be made")
     if meta is None:
         q, a, src = pick_riddle(history)
         meta = build_meta(q, a, random.choice(HOOKS))
