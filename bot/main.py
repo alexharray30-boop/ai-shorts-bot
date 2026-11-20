@@ -158,12 +158,16 @@ def upload(yt, path, meta):
     from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload
 
+    if meta.get("made_for_kids") and os.getenv("SEO", "1") == "1":
+        import seo
+        meta = seo.enhance(meta, log)  # live US/UK search phrases
+
     body = {
         "snippet": {
             "title": meta["title"][:100],
             "description": meta["description"][:4900],
             "tags": fit_tags(meta["tags"]),
-            "categoryId": "24",  # Entertainment
+            "categoryId": "27" if meta.get("made_for_kids") else "24",  # Education for kids learning
             "defaultLanguage": "en",
             "defaultAudioLanguage": "en",
         },
