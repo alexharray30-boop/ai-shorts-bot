@@ -6,8 +6,6 @@ name: Make Video Bank (30 kids videos, 4K)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "15 12 20 11 *"  # one-off: 20 Nov 12:15 UTC (5:15 PM Pakistan)
 
 permissions:
   contents: write
