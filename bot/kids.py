@@ -257,7 +257,12 @@ def countdown(frame, d, t, start, cx, cy, acc):
 # Formats
 # --------------------------------------------------------------------------- #
 def guess_animal(workdir, final, used):
-    choices = [a for a in ANIMALS if f"animal:{a[0]}" not in used] or ANIMALS
+    pool = ANIMALS
+    sl = __import__("os").getenv("ANIMAL_SLICE")  # e.g. "0/2": parallel batches use different animals
+    if sl:
+        k, m = (int(x) for x in sl.split("/"))
+        pool = [a for i, a in enumerate(ANIMALS) if i % m == k]
+    choices = [a for a in pool if f"animal:{a[0]}" not in used] or pool
     name, code = random.choice(choices)
     pal = FORCE_PAL or random.choice(KID_PALETTES)
     sc = Scene(workdir, pal)

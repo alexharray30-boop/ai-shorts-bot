@@ -102,16 +102,31 @@ def have_yt_creds():
     return all(os.getenv(k) for k in ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN"))
 
 
+def yt_secrets():
+    """Paste-proof: finds the client id / secret / refresh token by their shape, wherever they
+    were pasted (extra spaces, new lines, labels, or swapped between the 3 secrets)."""
+    blob = " ".join(os.getenv(k, "") for k in ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN"))
+    cid = re.search(r"[0-9]+-[0-9a-z]+\.apps\.googleusercontent\.com", blob)
+    sec = re.search(r"GOCSPX-[A-Za-z0-9_\-]+", blob)
+    tok = re.search(r"1//[A-Za-z0-9_\-]+", blob)
+    found = {"client id": bool(cid), "client secret": bool(sec), "refresh token": bool(tok)}
+    log("secrets found:", ", ".join(f"{k}={'yes' if v else 'NO'}" for k, v in found.items()))
+    return (cid.group(0) if cid else os.getenv("YT_CLIENT_ID", "").strip(),
+            sec.group(0) if sec else os.getenv("YT_CLIENT_SECRET", "").strip(),
+            tok.group(0) if tok else os.getenv("YT_REFRESH_TOKEN", "").strip())
+
+
 def yt_client():
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
 
+    cid, sec, tok = yt_secrets()
     creds = Credentials(
         None,
-        refresh_token=os.environ["YT_REFRESH_TOKEN"],
+        refresh_token=tok,
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=os.environ["YT_CLIENT_ID"],
-        client_secret=os.environ["YT_CLIENT_SECRET"],
+        client_id=cid,
+        client_secret=sec,
         scopes=SCOPES,
     )
     return build("youtube", "v3", credentials=creds, cache_discovery=False)
@@ -663,7 +678,15 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--check-only", action="store_true")
     ap.add_argument("--format", choices=["kids", "riddle", "guess_animal", "count", "colors", "odd_one_out"])
+    ap.add_argument("--bank", type=int, help="make this many videos for the video bank (no upload)")
+    ap.add_argument("--bank-dir", default=str(ROOT / "bank"))
+    ap.add_argument("--bank-formats", help="comma list, e.g. guess_animal,count")
+    ap.add_argument("--bank-prefix", default="", help="suffix that keeps parallel batches apart, e.g. -a")
+    ap.add_argument("--video", help="upload this ready-made mp4 (needs --meta)")
+    ap.add_argument("--meta")
     args = ap.parse_args()
+    if args.bank:
+        args.dry_run = True  # making videos only
 
     history = load_history()
     yt = yt_client() if have_yt_creds() else None
@@ -693,6 +716,42 @@ def main():
     if not FFMPEG:
         sys.exit("ffmpeg is not installed.")
 
+    # ---- upload a ready-made video (from the video bank) ----
+    if args.video:
+        meta = json.loads(pathlib.Path(args.meta).read_text(encoding="utf-8"))
+        vid = upload(yt, pathlib.Path(args.video), meta)
+        record_upload(history, meta, vid)
+        return
+
+    if not FFMPEG:
+        sys.exit("ffmpeg is not installed.")
+
+    # ---- make a batch of videos for the video bank ----
+    if args.bank:
+        bank_dir = pathlib.Path(args.bank_dir)
+        bank_dir.mkdir(parents=True, exist_ok=True)
+        formats = (args.bank_formats or "kids").split(",")
+        work_hist = list(history)
+        made = 0
+        for i in range(args.bank):
+            fmt_i = formats[i % len(formats)]
+            stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+            wd = OUT / f"bank-{stamp}-{i}"
+            wd.mkdir(parents=True, exist_ok=True)
+            name = f"bank-{i:02d}{args.bank_prefix}"
+            final = bank_dir / f"{name}.mp4"
+            meta = make_kids(wd, final, work_hist, fmt_i)
+            if meta is None:
+                log(f"bank video {i + 1} failed, skipping")
+                continue
+            (bank_dir / f"{name}.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+            work_hist.append({"format": meta["format"], "key": meta["key"], "keys": meta.get("keys", [])})
+            made += 1
+            log(f"bank video {i + 1}/{args.bank} ready: {final.name}")
+        if not made:
+            sys.exit("no bank videos could be made")
+        return
+
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
     workdir = OUT / stamp
     workdir.mkdir(parents=True, exist_ok=True)
@@ -704,23 +763,7 @@ def main():
 
     meta = None
     if fmt != "riddle":
-        global SCALE, W, H
-        import traceback
-        import kids
-        scales = [SCALE] + ([0.5] if SCALE > 0.5 else [])  # 4K first, then 1080p as a safety net
-        for attempt, sc in enumerate(scales):
-            SCALE, W, H = sc, int(2160 * sc), int(3840 * sc)
-            wd = workdir if attempt == 0 else workdir / f"retry{attempt}"
-            wd.mkdir(parents=True, exist_ok=True)
-            try:
-                pick = kids.make(sys.modules[__name__])
-                meta = pick(wd, final, history, None if fmt == "kids" else fmt)
-                log(f"kids video ({meta['format']}, {W}x{H}): {meta['title']}")
-                break
-            except Exception as e:
-                log(f"kids video failed at {W}x{H}:", repr(e))
-                traceback.print_exc()
-                meta = None
+        meta = make_kids(workdir, final, history, fmt)
         if meta is None and fmt != "kids":
             sys.exit("kids video could not be made")
     if meta is None:
@@ -736,10 +779,39 @@ def main():
         return
 
     vid = upload(yt, final, meta)
+    record_upload(history, meta, vid)
+
+
+def record_upload(history, meta, vid):
     history.append({"time": dt.datetime.now(dt.timezone.utc).isoformat(), "title": meta["title"],
-                    "format": meta["format"], "key": meta["key"], "keys": meta.get("keys", []),
+                    "format": meta.get("format", ""), "key": meta.get("key", ""), "keys": meta.get("keys", []),
                     "question": meta.get("question", ""), "video_id": vid})
     save_history(history)
+
+
+def make_kids(workdir, final, history, fmt):
+    """Kids video at 4K, falling back to 1080p if 4K fails. Returns meta or None."""
+    global SCALE, W, H
+    import traceback
+    import kids
+    base = SCALE
+    scales = [base] + ([0.5] if base > 0.5 else [])
+    try:
+        for attempt, sc in enumerate(scales):
+            SCALE, W, H = sc, int(2160 * sc), int(3840 * sc)
+            wd = workdir if attempt == 0 else workdir / f"retry{attempt}"
+            wd.mkdir(parents=True, exist_ok=True)
+            try:
+                pick = kids.make(sys.modules[__name__])
+                meta = pick(wd, final, history, None if fmt == "kids" else fmt)
+                log(f"kids video ({meta['format']}, {W}x{H}): {meta['title']}")
+                return meta
+            except Exception as e:
+                log(f"kids video failed at {W}x{H}:", repr(e))
+                traceback.print_exc()
+        return None
+    finally:
+        SCALE, W, H = base, int(2160 * base), int(3840 * base)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,75 @@
+name: Make Video Bank (15 kids videos, 4K)
+
+# Renders 15 one-minute 4K kids videos on GitHub's servers (3 jobs in parallel)
+# and stores them in the private release "video-bank". The hourly uploader
+# (shorts.yml) posts the next video from the bank every ~10 hours.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 12 20 11 *"   # one-off: 20 Nov 12:00 UTC (5 PM Pakistan)
+
+permissions:
+  contents: write
+
+concurrency:
+  group: video-bank
+  cancel-in-progress: false
+
+jobs:
+  make:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: a
+            formats: guess_animal
+            animals: "0/2"
+          - part: b
+            formats: count,odd_one_out
+            animals: "0/2"
+          - part: c
+            formats: colors,guess_animal
+            animals: "1/2"
+    env:
+      ANIMAL_SLICE: ${{ matrix.animals }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+      - name: Render 5 videos (4K)
+        run: python bot/main.py --bank 5 --bank-formats "${{ matrix.formats }}" --bank-prefix="-${{ matrix.part }}" --bank-dir bank
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bank-${{ matrix.part }}
+          path: bank/
+          retention-days: 2
+
+  store:
+    needs: make
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bank-*
+          path: bank
+          merge-multiple: true
+      - name: Save videos in the "video-bank" release
+        run: |
+          ls -la bank
+          gh release view video-bank >/dev/null 2>&1 || \
+            gh release create video-bank --title "Video Bank" --latest=false \
+              --notes "Ready-made kids videos. The bot uploads the next one every ~10 hours and then deletes it here."
+          gh release upload video-bank bank/* --clobber
+          echo "Videos waiting in the bank:"
+          gh release view video-bank --json assets -q '.assets[].name' | grep '\.mp4$' | sort
