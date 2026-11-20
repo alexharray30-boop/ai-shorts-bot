@@ -2,7 +2,8 @@ name: Riddle Shorts Bot (4K)
 
 on:
   schedule:
-    - cron: "17 * * * *"   # checks every hour; uploads only when 10h have passed
+    - cron: "17 * * * *"   # checks every hour; uploads only when 9.5h have passed
+    - cron: "15 16 20 11 *"  # one-off: 20 Nov, 16:15 UTC (~9:30 PM Pakistan) forced upload
   workflow_dispatch:
     inputs:
       mode:
@@ -43,7 +44,7 @@ jobs:
       - name: Is an upload due?
         id: check
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event.schedule }}" = "15 16 20 11 *" ]; then
             echo "due=true" >> "$GITHUB_OUTPUT"
           else
             python bot/main.py --check-only
@@ -58,7 +59,7 @@ jobs:
         run: |
           if [ "${{ inputs.mode }}" = "test" ]; then
             python bot/main.py --dry-run
-          elif [ "${{ inputs.mode }}" = "upload" ]; then
+          elif [ "${{ inputs.mode }}" = "upload" ] || [ "${{ github.event.schedule }}" = "15 16 20 11 *" ]; then
             python bot/main.py --force
           else
             python bot/main.py
