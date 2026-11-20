@@ -27,7 +27,7 @@ jobs:
       YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
       YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      MIN_HOURS_BETWEEN_UPLOADS: "10"
+      MIN_HOURS_BETWEEN_UPLOADS: "9.5"
       VIDEO_SECONDS: "10"
       PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS || 'public' }}
     steps:
