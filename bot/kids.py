@@ -504,7 +504,190 @@ def odd_one_out(workdir, final, used):
     }
 
 
-FORMATS = [(guess_animal, 3), (count, 2), (colors, 2), (odd_one_out, 2)]
+ABC = {
+    "A": [("apple", "1f34e"), ("ant", "1f41c")], "B": [("banana", "1f34c"), ("ball", "1f3c0")],
+    "C": [("cat", "1f408"), ("car", "1f697")], "D": [("dog", "1f415"), ("duck", "1f986")],
+    "E": [("elephant", "1f418"), ("egg", "1f95a")], "F": [("fish", "1f41f"), ("frog", "1f438")],
+    "G": [("grapes", "1f347"), ("giraffe", "1f992")], "H": [("horse", "1f40e"), ("house", "1f3e0")],
+    "I": [("ice cream", "1f366"), ("ice skate", "26f8")], "J": [("jellyfish", "1fabc"), ("juice", "1f9c3")],
+    "K": [("kite", "1fa81"), ("koala", "1f428")], "L": [("lion", "1f981"), ("lemon", "1f34b")],
+    "M": [("monkey", "1f412"), ("moon", "1f319")], "N": [("nest", "1faba"), ("nose", "1f443")],
+    "O": [("orange", "1f34a"), ("owl", "1f989")], "P": [("pig", "1f416"), ("pizza", "1f355")],
+    "Q": [("queen", "1f478")], "R": [("rabbit", "1f407"), ("rainbow", "1f308")],
+    "S": [("sun", "1f31e"), ("star", "2b50")], "T": [("tiger", "1f405"), ("tree", "1f333")],
+    "U": [("umbrella", "2614"), ("unicorn", "1f984")], "V": [("violin", "1f3bb"), ("volcano", "1f30b")],
+    "W": [("whale", "1f40b"), ("watermelon", "1f349")], "X": [("fox", "1f98a"), ("box", "1f4e6")],
+    "Y": [("yo-yo", "1fa80"), ("yak", "1f9ac")], "Z": [("zebra", "1f993")],
+}
+LETTER_COLORS = [(239, 68, 68), (249, 115, 22), (234, 179, 8), (34, 197, 94), (59, 130, 246), (168, 85, 247),
+                 (236, 72, 153)]
+
+
+def abc(workdir, final, used):
+    fresh = [L for L in ABC if f"abc:{L}" not in used]
+    L = random.choice(fresh or list(ABC))
+    objs = ABC[L]
+    pal = FORCE_PAL or random.choice(KID_PALETTES)
+    sc = Scene(workdir, pal)
+    col = random.choice(LETTER_COLORS)
+    title = text_banner("ABC FUN!", M.S(150), (255, 255, 255), (30, 30, 60))
+    R = M.S(560)
+    circ = Image.new("RGBA", (2 * R + M.S(60), 2 * R + M.S(60)), (0, 0, 0, 0))
+    cd = ImageDraw.Draw(circ)
+    cd.ellipse([M.S(30), M.S(30), 2 * R + M.S(30), 2 * R + M.S(30)], fill=(255, 255, 255), outline=col,
+               width=M.S(40))
+    lf = M.font(M.S(620), "Black")
+    txt = L + L.lower()
+    cd.text((circ.width / 2 - cd.textlength(txt, font=lf) / 2, circ.height / 2 - M.S(470)), txt, font=lf, fill=col,
+            stroke_width=M.S(10), stroke_fill=(30, 30, 60))
+    n = len(objs)
+    xs = [M.W / 2] if n == 1 else [M.W / 2 - M.S(520), M.W / 2 + M.S(520)]
+    arts = [shadowed(emoji(code, M.S(820 if n == 2 else 1000), workdir), blur=M.S(20), offset=M.S(20))
+            for _, code in objs]
+    labels = []
+    for name, _ in objs:
+        word = name.capitalize()
+        labels.append(big_text(word, M.S(150 if n == 2 else 200), color=(255, 255, 255), stroke=M.S(12)))
+    sc.fx_at("pop", 0.4)
+    sc.say(f"{L}!", 0.5, "l", 1.2, vol=2.0)
+    times = [2.2, 5.6][:n]
+    for k, (name, _) in enumerate(objs):
+        sc.fx_at("pop", times[k])
+        art = "an" if name[0] in "aeiou" else "a"
+        sc.say(f"{L} is for {name}!", times[k] + 0.2, f"o{k}", 2.8)
+    end_t = 9.0 if n == 2 else 6.0
+    sc.say(f"{L}, {L}, {L}!", end_t, "end", 1.6, vol=1.6)
+    sc.fx_at("yay", end_t, 0.6)
+    conf = Confetti(M.W / 2, M.S(1350), end_t, n=110, seed=ord(L))
+
+    def draw(t):
+        f, d = sc.base_frame(t)
+        sc.paste(f, title, M.W / 2, M.S(-200) + M.S(620) * M.ease_out_back(t / 0.5))
+        pulse = 1 + 0.04 * math.sin(t * 6) if t > 1 else 1
+        sc.paste(f, circ, M.W / 2, M.S(1400), M.ease_out_back((t - 0.35) / 0.45) * pulse)
+        for k in range(n):
+            tk = times[k]
+            if t >= tk:
+                sc.paste(f, arts[k], xs[k], M.S(2650), M.ease_out_back((t - tk) / 0.4) * (1 + 0.03 * math.sin(t * 5 + k)),
+                         angle=math.sin(t * 4 + k) * 4)
+                sc.paste(f, labels[k], xs[k], M.S(3250), M.ease_out_back((t - tk - 0.15) / 0.35))
+        conf.draw(ImageDraw.Draw(f), t)
+        return f
+
+    sc.encode(draw, final)
+    return {
+        "format": "abc", "key": f"abc:{L}",
+        "title": random.choice([f"Letter {L} for Kids 🔤 {L} is for {objs[0][0].title()}!", "ABC Phonics for Toddlers 🔤 Learn Letters",
+                                "Learn the Alphabet with Fun! 🍎 A to Z for Kids"]) + " #shorts",
+        "description": f"Learn the letter {L}! 🔤 {L} is for {', '.join(o[0] for o in objs)}. Fun alphabet learning for "
+                       "toddlers and preschool kids.\n\n#abc #alphabet #phonics #toddler #shorts",
+        "tags": ["abc for kids", "alphabet for kids", "phonics for kids", "learn abc", "abc song", "letters for toddlers",
+                 "a to z", "preschool learning", "kids learning videos", f"letter {L.lower()}", "toddler learning",
+                 "educational videos for kids", "shorts"],
+    }
+
+
+def _poly(n, cx, cy, r, rot=-90):
+    return [(cx + r * math.cos(math.radians(rot + i * 360 / n)), cy + r * math.sin(math.radians(rot + i * 360 / n)))
+            for i in range(n)]
+
+
+def _shape_img(kind, col, size):
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    c, r, w = size / 2, size * 0.42, max(6, size // 40)
+    ol = (255, 255, 255)
+    if kind == "CIRCLE":
+        d.ellipse([c - r, c - r, c + r, c + r], fill=col, outline=ol, width=w)
+    elif kind == "SQUARE":
+        d.rounded_rectangle([c - r, c - r, c + r, c + r], radius=size // 30, fill=col, outline=ol, width=w)
+    elif kind == "RECTANGLE":
+        d.rounded_rectangle([c - r, c - r * 0.6, c + r, c + r * 0.6], radius=size // 30, fill=col, outline=ol, width=w)
+    elif kind == "OVAL":
+        d.ellipse([c - r * 0.7, c - r, c + r * 0.7, c + r], fill=col, outline=ol, width=w)
+    elif kind == "TRIANGLE":
+        d.polygon(_poly(3, c, c + r * 0.15, r * 1.05), fill=col, outline=ol, width=w)
+    elif kind == "DIAMOND":
+        d.polygon([(c, c - r), (c + r * 0.75, c), (c, c + r), (c - r * 0.75, c)], fill=col, outline=ol, width=w)
+    elif kind == "OCTAGON":
+        d.polygon(_poly(8, c, c, r, rot=-67.5), fill=col, outline=ol, width=w)
+    elif kind == "HEXAGON":
+        d.polygon(_poly(6, c, c, r, rot=0), fill=col, outline=ol, width=w)
+    elif kind == "STAR":
+        pts = []
+        for i in range(10):
+            rr = r if i % 2 == 0 else r * 0.45
+            a = math.radians(-90 + i * 36)
+            pts.append((c + rr * math.cos(a), c + rr * math.sin(a)))
+        d.polygon(pts, fill=col, outline=ol, width=w)
+    elif kind == "HEART":
+        pts = []
+        for i in range(200):
+            tt = 2 * math.pi * i / 200
+            x = 16 * math.sin(tt) ** 3
+            y = -(13 * math.cos(tt) - 5 * math.cos(2 * tt) - 2 * math.cos(3 * tt) - math.cos(4 * tt))
+            pts.append((c + x * r / 17, c + y * r / 17 - r * 0.05))
+        d.polygon(pts, fill=col, outline=ol, width=w)
+    return shadowed(img, blur=max(4, size // 40), offset=max(4, size // 40))
+
+
+SHAPES = [("CIRCLE", (59, 130, 246), "a cookie", "1f36a"), ("SQUARE", (239, 68, 68), "a gift box", "1f381"),
+          ("TRIANGLE", (34, 197, 94), "a slice of pizza", "1f355"), ("STAR", (250, 204, 21), "a star", "2b50"),
+          ("HEART", (236, 72, 153), "a heart", "2764"), ("DIAMOND", (6, 182, 212), "a gem", "1f48e"),
+          ("RECTANGLE", (168, 85, 247), "a door", "1f6aa"), ("OVAL", (249, 115, 22), "an egg", "1f95a"),
+          ("OCTAGON", (220, 38, 38), "a stop sign", "1f6d1"), ("HEXAGON", (234, 179, 8), "a honeycomb", "1f41d")]
+
+
+def shapes(workdir, final, used):
+    fresh = [s for s in SHAPES if f"shape:{s[0]}" not in used]
+    pool = fresh if len(fresh) >= 2 else SHAPES
+    picks = random.sample(pool, 2)
+    pal = FORCE_PAL or random.choice(KID_PALETTES)
+    sc = Scene(workdir, pal)
+    title = text_banner("LEARN SHAPES!", M.S(140), (255, 255, 255), (30, 30, 60))
+    items = []
+    for k, (name, col, like, code) in enumerate(picks):
+        t0 = 0.6 + k * 5.1
+        items.append((t0, _shape_img(name, col, M.S(1400)), big_text(name, M.S(250), color=col, stroke=M.S(16)),
+                      shadowed(emoji(code, M.S(520), workdir), blur=M.S(14), offset=M.S(14)),
+                      big_text(f"Like {like}!", M.S(110), stroke=M.S(10))))
+        sc.fx_at("pop", t0)
+        sc.say(f"{name.title()}!", t0 + 0.1, f"s{k}", 1.2, vol=2.0)
+        sc.fx_at("pop", t0 + 2.0, 0.7)
+        sc.say(f"Like {like}!", t0 + 2.1, f"l{k}", 2.4)
+    sc.fx_at("yay", M.D - 0.9, 0.5)
+
+    def draw(t):
+        f, d = sc.base_frame(t)
+        cur = None
+        for it in items:
+            if t >= it[0]:
+                cur = it
+        if cur:
+            t0, shp, lbl, art, like = cur
+            lt = t - t0
+            sc.paste(f, shp, M.W / 2, M.S(1550), M.ease_out_back(lt / 0.45) * (1 + 0.03 * math.sin(t * 5)),
+                     angle=math.sin(t * 3) * 5)
+            sc.paste(f, lbl, M.W / 2, M.S(2550), M.ease_out_back((lt - 0.15) / 0.35))
+            if lt >= 2.0:
+                sc.paste(f, art, M.W / 2 - M.S(600), M.S(3150), M.ease_out_back((lt - 2.0) / 0.35))
+                sc.paste(f, like, M.W / 2 + M.S(250), M.S(3150), M.ease_out_back((lt - 2.1) / 0.35))
+        sc.paste(f, title, M.W / 2, M.S(-200) + M.S(620) * M.ease_out_back(t / 0.5))
+        return f
+
+    sc.encode(draw, final)
+    return {
+        "format": "shapes", "key": "shape:" + picks[0][0], "extra_keys": ["shape:" + p[0] for p in picks],
+        "title": random.choice(["Learn Shapes for Kids 🔷 Circle, Star & More!", "Shapes for Toddlers ⭐ Fun Learning",
+                                "Can You Name These Shapes? 🔺 Kids Learning"]) + " #shorts",
+        "description": "Let's learn shapes! ⭐ " + ", ".join(p[0].title() for p in picks) +
+                       ". Fun shape learning for toddlers and preschool kids.\n\n#shapes #toddler #kidslearning #shorts",
+        "tags": ["shapes for kids", "learn shapes", "shapes for toddlers", "shapes song", "2d shapes", "circle square triangle",
+                 "preschool learning", "kids learning videos", "toddler learning", "educational videos for kids", "shorts"],
+    }
+
+
+FORMATS = [(guess_animal, 3), (count, 2), (colors, 2), (odd_one_out, 2), (abc, 3), (shapes, 1)]
 
 
 # --------------------------------------------------------------------------- #
@@ -525,6 +708,12 @@ LONG_INFO = {
     "odd_one_out": (["FIND THE", "ODD ONE!"], "Can you find the odd one out? {n} puzzles!",
                     ["Find the Odd One Out! 👀 {n} Puzzles for Kids", "Spot the Different One! 🔍 {n} Kids Puzzles",
                      "Odd One Out Challenge 🧩 {n} Fun Puzzles for Kids"]),
+    "abc": (["LET'S LEARN", "ABC!"], "Let's learn the alphabet! Ready?",
+            ["Learn {n} Letters! 🔤 ABC Phonics for Kids", "ABC for Toddlers 🍎 A is for Apple & More!",
+             "Alphabet Fun for Kids 🔤 Learn Letters with Me!"]),
+    "shapes": (["LET'S LEARN", "SHAPES!"], "Let's learn shapes together!",
+               ["Learn Shapes for Kids ⭐ Circle, Star, Heart & More!", "Shapes for Toddlers 🔷 Fun & Easy Learning",
+                "Can You Name All These Shapes? 🔺 Kids Quiz"]),
 }
 
 
@@ -581,6 +770,7 @@ def pick_long(workdir, final, history, fn):
             rw.mkdir(exist_ok=True)
             m = fn(rw, rw / "round.mp4", used)
             used.add(m["key"])
+            used.update(m.get("extra_keys", []))
             metas.append(m)
             clips.append(rw / "round.mp4")
             badges.append(badge(f"{r + 1} / {n}", rw / "badge.png") and rw / "badge.png")
@@ -615,7 +805,8 @@ def pick_long(workdir, final, history, fn):
         desc += "\n\nAnimals in this video: " + ", ".join(i.title() for i in items) + " 🐾"
     desc += "\n\nNew fun learning videos for kids every day! 🎉\n\n#kids #kidslearning #toddler #preschool #shorts"
     return {
-        "format": name + "_long", "key": metas[0]["key"], "keys": [m["key"] for m in metas],
+        "format": name + "_long", "key": metas[0]["key"],
+        "keys": [k for m in metas for k in [m["key"]] + m.get("extra_keys", [])],
         "title": random.choice(titles).format(n=n) + " #shorts", "description": desc, "tags": tags,
     }
 

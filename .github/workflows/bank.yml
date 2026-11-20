@@ -1,13 +1,13 @@
-name: Make Video Bank (15 kids videos, 4K)
+name: Make Video Bank (30 kids videos, 4K)
 
-# Renders 15 one-minute 4K kids videos on GitHub's servers (3 jobs in parallel)
+# Renders 30 one-minute 4K kids videos on GitHub servers (6 jobs in parallel)
 # and stores them in the private release "video-bank". The hourly uploader
 # (shorts.yml) posts the next video from the bank every ~10 hours.
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 12 20 11 *"   # one-off: 20 Nov 12:00 UTC (5 PM Pakistan)
+    - cron: "15 12 20 11 *"  # one-off: 20 Nov 12:15 UTC (5:15 PM Pakistan)
 
 permissions:
   contents: write
@@ -28,11 +28,20 @@ jobs:
             formats: guess_animal
             animals: "0/2"
           - part: b
-            formats: count,odd_one_out
+            formats: abc
             animals: "0/2"
           - part: c
-            formats: colors,guess_animal
+            formats: count,odd_one_out
+            animals: "0/2"
+          - part: d
+            formats: guess_animal
             animals: "1/2"
+          - part: e
+            formats: colors,shapes
+            animals: "0/2"
+          - part: f
+            formats: abc,count,shapes,odd_one_out,colors
+            animals: "0/2"
     env:
       ANIMAL_SLICE: ${{ matrix.animals }}
     steps:
