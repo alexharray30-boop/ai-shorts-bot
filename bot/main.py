@@ -669,6 +669,13 @@ def main():
     yt = yt_client() if have_yt_creds() else None
     if yt is None and not args.dry_run:
         sys.exit("Missing YT_CLIENT_ID / YT_CLIENT_SECRET / YT_REFRESH_TOKEN (use --dry-run to test).")
+    if yt is not None and not args.dry_run:
+        # fail fast (before a 10-minute render) if the YouTube connection is broken
+        try:
+            ch = yt.channels().list(part="snippet", mine=True).execute()
+            log("YouTube connected:", ch["items"][0]["snippet"]["title"])
+        except Exception as e:
+            sys.exit(f"YOUTUBE LOGIN FAILED - check the 3 GitHub secrets or re-run CONNECT.bat. Details: {e}")
 
     if not args.force and not args.dry_run:
         hrs = hours_since_last_upload(yt, history)
