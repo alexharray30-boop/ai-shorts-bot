@@ -704,6 +704,8 @@ def main():
     ap.add_argument("--bank-used", help="folder of .json files of videos already in the bank (to avoid repeats)")
     ap.add_argument("--video", help="upload this ready-made mp4 (needs --meta)")
     ap.add_argument("--meta")
+    ap.add_argument("--long", nargs="?", const="auto",
+                    help="make a long landscape kids compilation: abc, guess_animal, count, odd_one_out or auto")
     args = ap.parse_args()
     if args.bank:
         args.dry_run = True  # making videos only
@@ -743,8 +745,22 @@ def main():
         record_upload(history, meta, vid)
         return
 
-    if not FFMPEG:
-        sys.exit("ffmpeg is not installed.")
+    # ---- long landscape compilation (kids channel, for TV) ----
+    if args.long:
+        import kids
+        kids.make(sys.modules[__name__])
+        stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+        workdir = OUT / f"long-{stamp}"
+        workdir.mkdir(parents=True, exist_ok=True)
+        final = OUT / f"long-{stamp}.mp4"
+        meta = kids.make_compilation(workdir, final, history, None if args.long == "auto" else args.long)
+        (workdir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        log(f"long video ready: {meta['title']} ({probe_duration(final):.0f}s)")
+        if args.dry_run:
+            return
+        vid = upload(yt, final, meta)
+        record_upload(history, meta, vid)
+        return
 
     # ---- make a batch of videos for the video bank ----
     if args.bank:

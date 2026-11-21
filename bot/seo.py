@@ -76,7 +76,8 @@ def live_keywords(fmt, limit=30):
 def enhance(meta, log=print):
     """Rewrite title / description / tags with live US+UK search phrases. Safe: on any error the
     original metadata is kept."""
-    fmt = meta.get("format", "").replace("_long", "")
+    fmt = meta.get("format", "").replace("_long", "").replace("_compilation", "")
+    long_video = bool(meta.get("long"))
     if fmt not in SEEDS:
         return meta
     try:
@@ -92,20 +93,23 @@ def enhance(meta, log=print):
     # title: lead with the main searched phrase, keep the fun hook, end with #shorts
     title = re.sub(r"\s*#shorts\s*$", "", meta.get("title", ""), flags=re.I).strip()
     main = MAIN[fmt]
-    if main.lower() not in title.lower():
+    if main.lower() not in title.lower() and not long_video:
         title = f"{main} | {title}"
-    if len(title) > 90:
-        title = title[:90].rsplit(" ", 1)[0]
-    m["title"] = title + " #shorts"
+    limit = 100 if long_video else 90
+    if len(title) > limit:
+        title = title[:limit].rsplit(" ", 1)[0]
+    m["title"] = title if long_video else title + " #shorts"
 
     # description: keyword-rich first lines (what search + Shorts shelf read), then the original text
     top = [k for k in kws if k.lower() != main.lower()][:6]
-    first = meta.get("description", "").split("\n\n")[0]
+    parts = meta.get("description", "").split("\n\n")
+    first = parts[0]
+    middle = ("\n\n".join(p for p in parts[1:] if not p.startswith("#")) + "\n\n") if long_video else ""
     m["description"] = (
-        f"{first}\n\n"
+        f"{first}\n\n{middle}"
         f"Perfect for toddlers and preschool kids in the USA and UK: {', '.join(top)}.\n"
         "New fun learning videos for kids every day - subscribe so you never miss one! 🎉\n\n"
-        f"#shorts #kidslearning {HASHTAG[fmt]} #toddlerlearning #preschool"
+        + ("" if long_video else "#shorts ") + f"#kidslearning {HASHTAG[fmt]} #toddlerlearning #preschool"
     )
 
     # tags: live phrases first, then our own

@@ -18,6 +18,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 M = None  # main module (set by make())
 FORCE_PAL = None  # keeps one colour theme across all rounds of a long video
+ABC_ORDER = None  # list of letters for an ordered A-Z compilation
 STYLE = {}  # another channel (e.g. pk.py) can override voice, palettes, long_info, play text, footer
 
 KID_VOICE = "en-US-AnaNeural"
@@ -547,8 +548,12 @@ LETTER_COLORS = [(239, 68, 68), (249, 115, 22), (234, 179, 8), (34, 197, 94), (5
 
 
 def abc(workdir, final, used):
-    fresh = [L for L in ABC if f"abc:{L}" not in used]
-    L = random.choice(fresh or list(ABC))
+    if ABC_ORDER:  # long "A to Z" videos go in alphabetical order
+        L = ABC_ORDER.pop(0)
+        fresh = [L]
+    else:
+        fresh = [L for L in ABC if f"abc:{L}" not in used]
+    L = fresh[0] if ABC_ORDER is not None and len(fresh) == 1 else random.choice(fresh or list(ABC))
     objs = ABC[L]
     pal = FORCE_PAL or random.choice(KID_PALETTES)
     sc = Scene(workdir, pal)
@@ -769,7 +774,7 @@ def badge(text, path):
     return img
 
 
-def pick_long(workdir, final, history, fn):
+def pick_long(workdir, final, history, fn, rounds=None):
     global FORCE_PAL
     used = set()
     for h in history:
@@ -778,7 +783,7 @@ def pick_long(workdir, final, history, fn):
     FORCE_PAL = random.choice(STYLE.get("palettes") or KID_PALETTES)
     name = fn.__name__
     lines, voice, titles = (STYLE.get("long_info") or LONG_INFO)[name]
-    n = ROUNDS
+    n = rounds or ROUNDS
     old_d = M.D
     clips, badges, metas = [], [], []
     try:
@@ -850,4 +855,73 @@ def pick(workdir, final, history, force_format=None):
     else:
         meta = fn(workdir, final, used)
     meta["made_for_kids"] = True
+    return meta
+
+
+# --------------------------------------------------------------------------- #
+# Long compilations (4-6 minutes, landscape 16:9 for TV / YouTube Kids)
+# --------------------------------------------------------------------------- #
+COMPILATIONS = {
+    "abc": (26, ["Learn ABC A to Z for Toddlers 🔤 Phonics with Fun Objects | Alphabet for Kids",
+                 "ABC Phonics for Kids 🍎 A is for Apple to Z is for Zebra | Learn Letters",
+                 "Alphabet A to Z for Preschool 🔤 Learn ABC with Pictures | Kids Learning"]),
+    "guess_animal": (24, ["Guess 24 Animals! 🦁 Animal Shadow Quiz for Kids | Learn Animal Names",
+                          "Can You Guess All 24 Animals? 🐘 Fun Animal Quiz for Toddlers & Kids",
+                          "Animal Names for Kids 🐾 Guess the Animal Shadow | 24 Animals"]),
+    "count": (20, ["Count With Me! 🔢 Counting 1 to 9 for Toddlers | 20 Fun Counting Games",
+                   "Learn Numbers for Kids 🍎 Counting Practice | Preschool Math",
+                   "Counting for Kids 🔢 How Many Can You Count? | Toddler Learning"]),
+    "odd_one_out": (20, ["Find the Odd One Out! 👀 20 Fun Puzzles for Kids | Brain Games",
+                         "Spot the Different One! 🔍 Odd One Out Challenge for Kids",
+                         "Brain Games for Kids 🧩 Find the Odd One Out | 20 Puzzles"]),
+}
+
+
+def to_landscape(src, dst):
+    """Vertical video centred on a soft blurred copy of itself -> 16:9 (3840x2160 at 4K)."""
+    W, H = M.S(3840), M.S(2160)
+    fc = (f"[0:v]split[a][b];[a]scale={W // 4}:{H // 4}:force_original_aspect_ratio=increase,"
+          f"crop={W // 4}:{H // 4},boxblur=12:3,scale={W}:{H},eq=brightness=-0.06[bg];"
+          f"[b]scale=-2:{H}[fg];[bg][fg]overlay=(W-w)/2:0,format=yuv420p[v]")
+    M.run([M.FFMPEG, "-y", "-i", str(src), "-filter_complex", fc, "-map", "[v]", "-map", "0:a",
+           "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-threads", "4", "-x264-params", "rc-lookahead=10",
+           "-c:a", "copy", "-movflags", "+faststart", str(dst)])
+
+
+def make_compilation(workdir, final, history, fmt=None):
+    """One long learning video. Picks the format used least recently if none is given."""
+    global ABC_ORDER
+    if not fmt:
+        done = [h.get("format", "") for h in history if h.get("format", "").endswith("_compilation")]
+        order = list(COMPILATIONS)
+        fmt = min(order, key=lambda f: max([i for i, d in enumerate(done) if d == f + "_compilation"],
+                                           default=-1))
+    rounds, titles = COMPILATIONS[fmt]
+    fn = dict((f.__name__, f) for f, _ in FORMATS)[fmt]
+    if fmt == "abc":
+        ABC_ORDER = list(ABC)
+    vertical = workdir / "vertical.mp4"
+    try:
+        meta = pick_long(workdir, vertical, [], fn, rounds=rounds)
+    finally:
+        ABC_ORDER = None
+    to_landscape(vertical, final)
+    first = {
+        "abc": "Learn the whole alphabet from A to Z! 🔤 Every letter with fun objects - A is for Apple, "
+               "B is for Banana... all the way to Z is for Zebra.",
+        "guess_animal": f"Can you guess all {rounds} animals from their shadows? 🐾 A fun animal quiz that "
+                        "teaches animal names in English.",
+        "count": f"{rounds} fun counting games! 🔢 Count apples, balloons, stars and more - easy number "
+                 "practice for toddlers.",
+        "odd_one_out": f"{rounds} brain-teasing puzzles! 👀 Find the one that is different in each picture.",
+    }[fmt]
+    extra = meta["description"].split("\n\n")[1] if fmt == "guess_animal" else ""
+    meta.update(
+        format=fmt + "_compilation", long=True, made_for_kids=True, keys=[],
+        title=random.choice(titles),
+        description=(f"{first}\n\n{extra}\n\n" if extra else f"{first}\n\n") +
+                    "A longer learning video for toddlers and preschool kids - perfect for watching on TV. 📺\n"
+                    "New fun learning videos for kids every week! Subscribe to AI Adventure Kids. 🎉\n\n"
+                    "#kidslearning #toddlerlearning #preschool #learningvideos",
+    )
     return meta
