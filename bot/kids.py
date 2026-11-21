@@ -807,22 +807,23 @@ def pick_long(workdir, final, history, fn, rounds=None):
         M.D = old_d
         FORCE_PAL = None
 
-    # join: intro + rounds (with "x / n" badge in the top-left corner)
-    cmd = [M.FFMPEG, "-y"]
-    for c in clips:
-        cmd += ["-i", str(c)]
-    for b in badges:
-        cmd += ["-i", str(b)]
-    fc, parts = [], ["[0:v][0:a]"]
+    # join: put the "x / n" badge on each round one at a time, then glue all clips together without
+    # re-encoding (low memory, so even 27 clips in 4K are fine)
+    enc = ["-c:v", "libx264", "-preset", "fast", "-crf", "19", "-threads", "4", "-x264-params", "rc-lookahead=10",
+           "-pix_fmt", "yuv420p", "-r", str(M.FPS), "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"]
+    parts = []
+    intro_n = workdir / "intro" / "intro_n.mp4"
+    M.run([M.FFMPEG, "-y", "-i", str(clips[0])] + enc + [str(intro_n)])
+    parts.append(intro_n)
     for r in range(n):
-        vi, bi = r + 1, len(clips) + r
-        fc.append(f"[{vi}:v][{bi}:v]overlay={M.S(30)}:{M.S(40)}[v{r}]")
-        parts.append(f"[v{r}][{vi}:a]")
-    fc.append(f"{''.join(parts)}concat=n={len(clips)}:v=1:a=1[v][a]")
-    cmd += ["-filter_complex", ";".join(fc), "-map", "[v]", "-map", "[a]",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "19", "-threads", "4", "-x264-params", "rc-lookahead=10",
-            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(final)]
-    M.run(cmd)
+        out = clips[r + 1].with_name("round_badge.mp4")
+        M.run([M.FFMPEG, "-y", "-i", str(clips[r + 1]), "-i", str(badges[r]), "-filter_complex",
+               f"[0:v][1:v]overlay={M.S(30)}:{M.S(40)}[v]", "-map", "[v]", "-map", "0:a"] + enc + [str(out)])
+        parts.append(out)
+    lst = workdir / "concat.txt"
+    lst.write_text("".join(f"file '{p.resolve().as_posix()}'\n" for p in parts), encoding="utf-8")
+    M.run([M.FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy",
+           "-movflags", "+faststart", str(final)])
 
     items = [m["key"].split(":", 1)[1].split(":")[0] for m in metas]
     tags = []
