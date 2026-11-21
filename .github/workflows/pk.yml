@@ -1,0 +1,97 @@
+name: Dimagh Lagao (Pakistan channel)
+
+on:
+  schedule:
+    - cron: "47 * * * *"   # checks every hour; uploads only when 4.5h have passed (~every 5 hours)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "test = make video only (download from Artifacts), upload = upload now"
+        type: choice
+        options: [test, upload]
+        default: test
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pk-channel
+  cancel-in-progress: false
+
+jobs:
+  shorts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CHANNEL: pk
+      YT2_CLIENT_ID: ${{ secrets.YT2_CLIENT_ID }}
+      YT2_CLIENT_SECRET: ${{ secrets.YT2_CLIENT_SECRET }}
+      YT2_REFRESH_TOKEN: ${{ secrets.YT2_REFRESH_TOKEN }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      MIN_HOURS_BETWEEN_UPLOADS: "4.5"
+      VIDEO_SECONDS: "10"
+      PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS || 'public' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Is an upload due?
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "due=true" >> "$GITHUB_OUTPUT"
+          else
+            python bot/main.py --check-only
+          fi
+
+      - name: Install FFmpeg
+        if: steps.check.outputs.due == 'true'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+
+      - name: Make (and upload) the Short
+        if: steps.check.outputs.due == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ "${{ inputs.mode }}" = "test" ]; then
+            python bot/main.py --dry-run
+            exit 0
+          fi
+          # 1) next ready-made video from the video bank, if any
+          NEXT=$(gh release view pk-bank --json assets -q '[.assets[].name | select(endswith(".mp4"))] | sort | .[0] // empty' 2>/dev/null || true)
+          if [ -n "$NEXT" ]; then
+            echo "Uploading from video bank: $NEXT"
+            mkdir -p dl
+            gh release download pk-bank -p "$NEXT" -p "${NEXT%.mp4}.json" -D dl --clobber
+            python bot/main.py --force --video "dl/$NEXT" --meta "dl/${NEXT%.mp4}.json"
+            gh release delete-asset pk-bank "$NEXT" -y
+            gh release delete-asset pk-bank "${NEXT%.mp4}.json" -y || true
+          else
+            # 2) bank empty: make a fresh video now
+            echo "Video bank is empty - making a new video"
+            python bot/main.py --force
+          fi
+
+      - name: Keep the video for 3 days (Actions -> run -> Artifacts)
+        if: steps.check.outputs.due == 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pk-short-${{ github.run_id }}
+          path: out/
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Save history
+        if: steps.check.outputs.due == 'true'
+        run: |
+          git config user.name "ai-shorts-bot"
+          git config user.email "ai-shorts-bot@users.noreply.github.com"
+          git add state/ || true
+          git diff --cached --quiet || (git commit -m "bot: upload log" && (git push || (git pull --rebase && git push)))

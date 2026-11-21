@@ -1,0 +1,83 @@
+name: Dimagh Lagao - Make Video Bank (4K)
+
+# Renders one-minute 4K Urdu videos (GK quiz, cricket quiz, paheliyan, facts) for the
+# Pakistan channel and stores them in the private release "pk-bank".
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pk-bank
+  cancel-in-progress: false
+
+jobs:
+  make:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: a
+            formats: gk
+            n: 5
+          - part: b
+            formats: cricket
+            n: 5
+          - part: c
+            formats: paheli
+            n: 4
+          - part: d
+            formats: fact
+            n: 5
+    env:
+      CHANNEL: pk
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+      - name: Get the list of videos already waiting in the bank
+        run: |
+          mkdir -p used
+          gh release download pk-bank -p "*.json" -D used --clobber 2>/dev/null || echo "bank is empty"
+      - name: Render videos (4K)
+        run: >
+          python bot/main.py --bank ${{ matrix.n }} --bank-formats "${{ matrix.formats }}"
+          --bank-prefix="-${{ matrix.part }}" --bank-batch "${{ github.run_number }}"
+          --bank-used used --bank-dir bank
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pk-bank-${{ matrix.part }}
+          path: bank/
+          retention-days: 2
+
+  store:
+    needs: make
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pk-bank-*
+          path: bank
+          merge-multiple: true
+      - name: Save videos in the "pk-bank" release
+        run: |
+          ls -la bank
+          gh release view pk-bank >/dev/null 2>&1 || \
+            gh release create pk-bank --title "Dimagh Lagao Video Bank" --latest=false \
+              --notes "Ready-made Urdu videos for the Pakistan channel."
+          gh release upload pk-bank bank/* --clobber
+          gh release view pk-bank --json assets -q '.assets[].name' | grep '\.mp4$' | sort

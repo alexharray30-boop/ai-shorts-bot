@@ -38,7 +38,9 @@ from riddles import RIDDLES  # noqa: E402
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "out"
 FONTS = ROOT / "fonts"
-STATE_FILE = ROOT / "state" / "history.json"
+CHANNEL = os.getenv("CHANNEL", "kids")  # "kids" = AI Adventure Kids, "pk" = Pakistan quiz channel
+STATE_FILE = ROOT / "state" / ("pk_history.json" if CHANNEL == "pk" else "history.json")
+YT_KEYS = tuple(("YT2_" if CHANNEL == "pk" else "YT_") + k for k in ("CLIENT_ID", "CLIENT_SECRET", "REFRESH_TOKEN"))
 MUSIC_DIR = ROOT / "music"
 
 SCALE = float(os.getenv("RENDER_SCALE", "1"))  # 1 = 4K, 0.5 = 1080p (fast tests)
@@ -99,21 +101,21 @@ def save_history(hist):
 # YouTube
 # --------------------------------------------------------------------------- #
 def have_yt_creds():
-    return all(os.getenv(k) for k in ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN"))
+    return all(os.getenv(k) for k in YT_KEYS)
 
 
 def yt_secrets():
     """Paste-proof: finds the client id / secret / refresh token by their shape, wherever they
     were pasted (extra spaces, new lines, labels, or swapped between the 3 secrets)."""
-    blob = " ".join(os.getenv(k, "") for k in ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN"))
+    blob = " ".join(os.getenv(k, "") for k in YT_KEYS)
     cid = re.search(r"[0-9]+-[0-9a-z]+\.apps\.googleusercontent\.com", blob)
     sec = re.search(r"GOCSPX-[A-Za-z0-9_\-]+", blob)
     tok = re.search(r"1//[A-Za-z0-9_\-]+", blob)
     found = {"client id": bool(cid), "client secret": bool(sec), "refresh token": bool(tok)}
     log("secrets found:", ", ".join(f"{k}={'yes' if v else 'NO'}" for k, v in found.items()))
-    return (cid.group(0) if cid else os.getenv("YT_CLIENT_ID", "").strip(),
-            sec.group(0) if sec else os.getenv("YT_CLIENT_SECRET", "").strip(),
-            tok.group(0) if tok else os.getenv("YT_REFRESH_TOKEN", "").strip())
+    return (cid.group(0) if cid else os.getenv(YT_KEYS[0], "").strip(),
+            sec.group(0) if sec else os.getenv(YT_KEYS[1], "").strip(),
+            tok.group(0) if tok else os.getenv(YT_KEYS[2], "").strip())
 
 
 def yt_client():
@@ -327,7 +329,8 @@ def wrap(draw, text, fnt, max_w):
     return lines
 
 
-def fit_text(text, max_w, max_h, start, weight="ExtraBold", min_size=60, spacing=1.18):
+def fit_text(text, max_w, max_h, start, weight="ExtraBold", min_size=None, spacing=1.18):
+    min_size = min_size or max(12, S(60))
     d = ImageDraw.Draw(Image.new("RGB", (10, 10)))
     size = start
     while size > min_size:
@@ -424,7 +427,8 @@ def probe_duration(path):
 def tts(text, path, max_len):
     global VOICE
     for rate in ("+5%", "+15%", "+25%", "+35%"):
-        for attempt, voice in enumerate([VOICE, VOICE, "en-US-GuyNeural", "en-US-ChristopherNeural"]):
+        backups = ["ur-PK-UzmaNeural", "ur-PK-AsadNeural"] if VOICE.startswith("ur-") else ["en-US-GuyNeural", "en-US-ChristopherNeural"]
+        for attempt, voice in enumerate([VOICE, VOICE] + [b for b in backups if b != VOICE] + [VOICE]):
             try:
                 asyncio.run(_tts(text, path, rate)) if voice == VOICE else \
                     asyncio.run(edge_tts_save(text, path, rate, voice))
@@ -682,7 +686,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--check-only", action="store_true")
     ap.add_argument("--format", choices=["kids", "riddle", "guess_animal", "count", "colors", "odd_one_out",
-                                         "abc", "shapes"])
+                                         "abc", "shapes", "gk", "cricket", "paheli", "fact"])
     ap.add_argument("--bank", type=int, help="make this many videos for the video bank (no upload)")
     ap.add_argument("--bank-dir", default=str(ROOT / "bank"))
     ap.add_argument("--bank-formats", help="comma list, e.g. guess_animal,count")
@@ -775,7 +779,7 @@ def main():
 
     fmt = args.format
     if fmt is None:
-        fmt = "kids" if random.random() < KIDS_SHARE else "riddle"
+        fmt = "kids" if (CHANNEL == "pk" or random.random() < KIDS_SHARE) else "riddle"
 
     meta = None
     if fmt != "riddle":
@@ -810,6 +814,9 @@ def make_kids(workdir, final, history, fmt):
     global SCALE, W, H
     import traceback
     import kids
+    engine = kids
+    if CHANNEL == "pk":
+        import pk as engine
     base = SCALE
     scales = [base] + ([0.5] if base > 0.5 else [])
     try:
@@ -818,7 +825,7 @@ def make_kids(workdir, final, history, fmt):
             wd = workdir if attempt == 0 else workdir / f"retry{attempt}"
             wd.mkdir(parents=True, exist_ok=True)
             try:
-                pick = kids.make(sys.modules[__name__])
+                pick = engine.make(sys.modules[__name__])
                 meta = pick(wd, final, history, None if fmt == "kids" else fmt)
                 log(f"kids video ({meta['format']}, {W}x{H}): {meta['title']}")
                 return meta

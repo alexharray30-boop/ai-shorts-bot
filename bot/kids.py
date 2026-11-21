@@ -18,6 +18,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 M = None  # main module (set by make())
 FORCE_PAL = None  # keeps one colour theme across all rounds of a long video
+STYLE = {}  # another channel (e.g. pk.py) can override voice, palettes, long_info, play text, footer
 
 KID_VOICE = "en-US-AnaNeural"
 EMOJI_URL = "https://fonts.gstatic.com/s/e/notoemoji/latest/{code}/512.png"
@@ -185,7 +186,7 @@ class Scene:
     def say(self, text, at, name, max_len=3.0, vol=1.8):
         p = self.workdir / f"{name}.mp3"
         old = M.VOICE
-        M.VOICE = KID_VOICE
+        M.VOICE = STYLE.get("voice") or KID_VOICE
         try:
             dur = M.tts(text, p, max_len)
         finally:
@@ -745,7 +746,7 @@ def intro(workdir, final, lines, voice):
     acc = pal[2] if pal[2] != (255, 255, 255) else (250, 204, 21)
     l1 = big_text(lines[0], M.S(230), stroke=M.S(16))
     l2 = big_text(lines[1], M.S(300), color=acc, stroke=M.S(18))
-    play = text_banner("LET'S PLAY!", M.S(140), (255, 255, 255), (30, 30, 60))
+    play = text_banner(STYLE.get("play", "LET'S PLAY!"), M.S(140), (255, 255, 255), (30, 30, 60))
     sc.fx_at("whoosh", 0, 0.9)
     sc.fx_at("yay", 0.5, 0.6)
     sc.say(voice, 0.3, "intro", max_len=M.D - 0.5)
@@ -774,9 +775,9 @@ def pick_long(workdir, final, history, fn):
     for h in history:
         used.add(h.get("key", ""))
         used.update(h.get("keys", []))
-    FORCE_PAL = random.choice(KID_PALETTES)
+    FORCE_PAL = random.choice(STYLE.get("palettes") or KID_PALETTES)
     name = fn.__name__
-    lines, voice, titles = LONG_INFO[name]
+    lines, voice, titles = (STYLE.get("long_info") or LONG_INFO)[name]
     n = ROUNDS
     old_d = M.D
     clips, badges, metas = [], [], []
@@ -825,7 +826,10 @@ def pick_long(workdir, final, history, fn):
     desc = metas[0]["description"].split("\n\n")[0]
     if name == "guess_animal":
         desc += "\n\nAnimals in this video: " + ", ".join(i.title() for i in items) + " 🐾"
-    desc += "\n\nNew fun learning videos for kids every day! 🎉\n\n#kids #kidslearning #toddler #preschool #shorts"
+    if STYLE.get("round_lines"):  # e.g. list every question asked in the video
+        desc += "\n\n" + "\n".join(m.get("line", "") for m in metas if m.get("line"))
+    desc += STYLE.get("footer", "\n\nNew fun learning videos for kids every day! 🎉\n\n"
+                                "#kids #kidslearning #toddler #preschool #shorts")
     return {
         "format": name + "_long", "key": metas[0]["key"],
         "keys": [k for m in metas for k in [m["key"]] + m.get("extra_keys", [])],
