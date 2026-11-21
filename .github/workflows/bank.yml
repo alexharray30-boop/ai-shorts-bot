@@ -77,7 +77,7 @@ jobs:
 
   store:
     needs: make
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
