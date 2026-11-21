@@ -118,3 +118,81 @@ def enhance(meta, log=print):
     log("seo: title ->", m["title"])
     log("seo: top US/UK searches ->", ", ".join(kws[:8]))
     return m
+
+
+# --------------------------------------------------------------------------- #
+# Pakistan channel (Dimagh Lagao)
+# --------------------------------------------------------------------------- #
+SEEDS_PK = {
+    "gk": ["gk quiz in urdu", "general knowledge questions in urdu", "general knowledge questions and answers pakistan",
+           "gk questions about pakistan", "urdu quiz", "pakistan gk"],
+    "cricket": ["cricket quiz", "cricket quiz pakistan", "pakistan cricket", "cricket gk", "cricket quiz urdu"],
+    "paheli": ["paheliyan in urdu", "paheliyan in urdu with answer", "urdu paheliyan", "paheliyan mushkil",
+               "riddles in urdu"],
+    "fact": ["amazing facts urdu", "amazing facts in urdu", "kya aap jante hain", "interesting facts in urdu",
+             "amazing facts shorts"],
+    "gta": ["gta 6", "gta 6 quiz", "gta vi", "gta 6 facts", "gta vice city"],
+    "_all": ["urdu quiz", "quiz in urdu", "dimagh lagao"],
+}
+MAIN_PK = {"gk": "GK Quiz in Urdu", "cricket": "Cricket Quiz Pakistan", "paheli": "Urdu Paheliyan",
+           "fact": "Amazing Facts in Urdu", "gta": "GTA 6 Quiz"}
+HASHTAG_PK = {"gk": "#gkquiz", "cricket": "#cricketquiz", "paheli": "#paheliyan", "fact": "#amazingfacts",
+              "gta": "#gta6"}
+BLOCK_PK = re.compile(
+    r"\b(hub|world|point|master|channel|ducky|techno|gamerz|bhai|hindi|english|tamil|bangla|bengali|"
+    r"kaise|banaye|song|songs|live|stream|trailer|gameplay|ending|leak|leaks|download|apk|mod|"
+    r"bhejo|funny|vlog|prank|\d{4})\b", re.I)
+
+
+def live_keywords_pk(fmt, limit=30):
+    score = {}
+    seeds = SEEDS_PK.get(fmt, []) + SEEDS_PK["_all"]
+    for seed in seeds:
+        for pos, s in enumerate(suggestions(seed, "PK")):
+            s = re.sub(r"\s+", " ", s.lower()).strip()
+            if len(s) < 4 or len(s) > 45 or BLOCK.search(s) or BLOCK_PK.search(s):
+                continue
+            score[s] = score.get(s, 0) + (10 - pos)
+        time.sleep(0.15)
+    for seed in seeds:
+        score[seed] = score.get(seed, 0) + 5
+    return [k for k, _ in sorted(score.items(), key=lambda kv: -kv[1])][:limit]
+
+
+def enhance_pk(meta, log=print):
+    fmt = meta.get("format", "").replace("_long", "")
+    if fmt not in SEEDS_PK:
+        return meta
+    try:
+        kws = live_keywords_pk(fmt)
+    except Exception as e:
+        log("seo-pk: lookup failed, keeping metadata:", e)
+        return meta
+    if len(kws) < 5:
+        return meta
+    m = dict(meta)
+    title = re.sub(r"\s*#shorts\s*$", "", meta.get("title", ""), flags=re.I).strip()
+    main = MAIN_PK[fmt]
+    if main.lower() not in title.lower():
+        title = f"{main} | {title}"
+    if len(title) > 90:
+        title = title[:90].rsplit(" ", 1)[0]
+    m["title"] = title + " #shorts"
+    top = [k for k in kws if k.lower() != main.lower()][:6]
+    body = meta.get("description", "")
+    m["description"] = (
+        f"{body.split(chr(10) + chr(10))[0]}\n\n"
+        f"Is video mein: {', '.join(top)}.\n\n"
+        + "\n\n".join(body.split("\n\n")[1:2]) +
+        "\n\nRoz naye Urdu quiz, paheliyan aur facts! Channel subscribe karein 🔔\n\n"
+        f"#shorts #urdu {HASHTAG_PK[fmt]} #pakistan #dimaghlagao"
+    )
+    tags = []
+    for t in kws + meta.get("tags", []):
+        if t not in tags:
+            tags.append(t)
+    m["tags"] = tags
+    m["seo_keywords"] = kws[:15]
+    log("seo-pk: title ->", m["title"])
+    log("seo-pk: top Pakistan searches ->", ", ".join(kws[:8]))
+    return m

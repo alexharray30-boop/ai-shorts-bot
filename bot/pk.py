@@ -17,7 +17,7 @@ import kids
 from pk_content import CRICKET, FACTS, GK, GTA, PAHELIYAN
 
 M = None
-VOICE = "ur-PK-AsadNeural"
+VOICE = "ur-PK-UzmaNeural"  # clear Pakistani female voice; Gul and Asad are backups
 PALETTES = [  # top, bottom, accent
     ((4, 120, 60), (2, 44, 24), (250, 204, 21)),      # Pakistan green
     ((30, 64, 175), (8, 15, 45), (250, 204, 21)),
@@ -55,7 +55,7 @@ def make(main_module):
     kids.M = main_module
     kids.STYLE.update(voice=VOICE, palettes=PALETTES, long_info=LONG_INFO, play="SHURU KAREIN!",
                       footer=FOOTER, round_lines=True)
-    kids.ROUND_SECONDS = 12.0  # Urdu questions need a little more time
+    kids.ROUND_SECONDS = 13.0  # Urdu needs time to be spoken at a natural speed
     return pick
 
 
@@ -121,7 +121,7 @@ def _quiz(workdir, final, used, prefix, bank, title, icon):
              for k, o in enumerate(opts)]
     sc.fx_at("whoosh", 0, 0.7)
     sc.fx_at("pop", 0.35)
-    ql = sc.say(q_u, 0.45, "q", max_len=4.6)
+    ql = sc.say(q_u, 0.45, "q", max_len=5.4)
     cd = min(max(0.45 + ql + 0.3, 3.4), M.D - 4.4)
     reveal = cd + 3
     for k in range(3):
@@ -174,7 +174,7 @@ def paheli(workdir, final, used):
     think = kids.big_text("SOCHIYE...", M.S(120), stroke=M.S(10))
     sc.fx_at("whoosh", 0, 0.7)
     sc.fx_at("pop", 0.35)
-    ql = sc.say(r_u, 0.45, "q", max_len=4.8)
+    ql = sc.say(r_u, 0.45, "q", max_len=5.6)
     cd = min(max(0.45 + ql + 0.3, 3.4), M.D - 4.2)
     reveal = cd + 3
     for k in range(3):

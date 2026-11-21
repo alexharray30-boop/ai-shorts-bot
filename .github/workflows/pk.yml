@@ -2,7 +2,7 @@ name: Dimagh Lagao (Pakistan channel)
 
 on:
   schedule:
-    - cron: "47 * * * *"   # checks every hour; uploads only when 4.5h have passed (~every 5 hours)
+    - cron: "47 * * * *"   # checks every hour; uploads only when 3.5h have passed (~every 4 hours)
   workflow_dispatch:
     inputs:
       mode:
@@ -32,7 +32,7 @@ jobs:
       YT2_CLIENT_SECRET: ${{ secrets.YT2_CLIENT_SECRET }}
       YT2_REFRESH_TOKEN: ${{ secrets.YT2_REFRESH_TOKEN }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      MIN_HOURS_BETWEEN_UPLOADS: "4.5"
+      MIN_HOURS_BETWEEN_UPLOADS: "3.5"
       VIDEO_SECONDS: "10"
       PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS || 'public' }}
     steps:

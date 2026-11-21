@@ -161,18 +161,22 @@ def upload(yt, path, meta):
     from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload
 
-    if meta.get("made_for_kids") and os.getenv("SEO", "1") == "1":
+    if os.getenv("SEO", "1") == "1":
         import seo
-        meta = seo.enhance(meta, log)  # live US/UK search phrases
+        if CHANNEL == "pk" or meta.get("channel") == "pk":
+            meta = seo.enhance_pk(meta, log)  # live Pakistan search phrases
+        elif meta.get("made_for_kids"):
+            meta = seo.enhance(meta, log)  # live US/UK search phrases
 
+    pk_channel = CHANNEL == "pk" or meta.get("channel") == "pk"
     body = {
         "snippet": {
             "title": meta["title"][:100],
             "description": meta["description"][:4900],
             "tags": fit_tags(meta["tags"]),
-            "categoryId": "27" if meta.get("made_for_kids") else "24",  # Education for kids learning
-            "defaultLanguage": "en",
-            "defaultAudioLanguage": "en",
+            "categoryId": "27" if (meta.get("made_for_kids") or pk_channel) else "24",  # Education
+            "defaultLanguage": "ur" if pk_channel else "en",
+            "defaultAudioLanguage": "ur" if pk_channel else "en",
         },
         "status": {"privacyStatus": PRIVACY, "selfDeclaredMadeForKids": bool(meta.get("made_for_kids")),
                    "containsSyntheticMedia": False},
@@ -427,9 +431,12 @@ def probe_duration(path):
 
 def tts(text, path, max_len):
     global VOICE
-    for rate in ("+5%", "+15%", "+25%", "+35%"):
-        backups = ["ur-PK-UzmaNeural", "ur-PK-AsadNeural"] if VOICE.startswith("ur-") else ["en-US-GuyNeural", "en-US-ChristopherNeural"]
-        for attempt, voice in enumerate([VOICE, VOICE] + [b for b in backups if b != VOICE] + [VOICE]):
+    urdu = VOICE.startswith("ur-")
+    rates = ("+0%", "+8%", "+15%") if urdu else ("+5%", "+15%", "+25%", "+35%")  # Urdu sounds wrong when rushed
+    for rate in rates:
+        backups = (["ur-PK-UzmaNeural", "ur-IN-GulNeural", "ur-PK-AsadNeural"] if urdu
+                   else ["en-US-GuyNeural", "en-US-ChristopherNeural"])
+        for attempt, voice in enumerate([VOICE, VOICE] + [b for b in backups if b != VOICE] + [VOICE, VOICE]):
             try:
                 asyncio.run(_tts(text, path, rate)) if voice == VOICE else \
                     asyncio.run(edge_tts_save(text, path, rate, voice))
