@@ -27,7 +27,7 @@ jobs:
       YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
       YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      MIN_HOURS_BETWEEN_UPLOADS: "4.5"
+      MIN_HOURS_BETWEEN_UPLOADS: "7.5"  # shared Google project quota (~6 uploads/day total); back to 4.5 when the channel has its own project
       VIDEO_SECONDS: "10"
       PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS || 'public' }}
     steps:
