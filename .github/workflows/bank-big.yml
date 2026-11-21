@@ -1,0 +1,73 @@
+name: Make BIG Video Bank (kids, 4K)
+
+# Renders many one-minute 4K kids videos in parallel (5 per job) and adds them straight to the
+# "video-bank" release. Default: 40 jobs = 200 videos. Free because the repo is public.
+
+on:
+  workflow_dispatch:
+    inputs:
+      jobs:
+        description: "number of parallel jobs (each makes 5 videos)"
+        default: "40"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: video-bank
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - id: m
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, os, string
+          n = int("${{ inputs.jobs }}" or 40)
+          # weights: guess the animal is the most popular format
+          mix = (["guess_animal"] * 12 + ["abc"] * 6 + ["count"] * 7 + ["odd_one_out"] * 6 +
+                 ["colors"] * 5 + ["shapes"] * 4)
+          names = [a + b for a in string.ascii_lowercase for b in string.ascii_lowercase]
+          jobs = [{"part": names[i], "formats": mix[i % len(mix)]} for i in range(n)]
+          print("matrix=" + json.dumps({"include": jobs}))
+          EOF
+      - name: Make sure the bank release exists
+        run: |
+          gh release view video-bank >/dev/null 2>&1 || gh release create video-bank --title "Video Bank" \
+            --latest=false --notes "Ready-made kids videos waiting to be uploaded."
+
+  make:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+      - name: Render 5 videos (4K)
+        run: >
+          python bot/main.py --bank 5 --bank-formats "${{ matrix.formats }}"
+          --bank-prefix="-${{ matrix.part }}" --bank-batch "${{ github.run_number }}0"
+          --bank-dir bank
+      - name: Add them to the bank
+        run: |
+          for i in 1 2 3; do gh release upload video-bank bank/* --clobber && break || sleep 20; done
+          ls bank
