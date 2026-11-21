@@ -130,7 +130,7 @@ def yt_client():
         token_uri="https://oauth2.googleapis.com/token",
         client_id=cid,
         client_secret=sec,
-        scopes=SCOPES,
+        # no scopes here: the refreshed token keeps every permission the channel granted
     )
     return build("youtube", "v3", credentials=creds, cache_discovery=False)
 
