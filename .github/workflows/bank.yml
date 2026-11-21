@@ -23,25 +23,34 @@ jobs:
       matrix:
         include:
           - part: a
-            formats: guess_animal
+            formats: guess_animal,guess_animal,guess_animal,guess_animal,colors
             animals: "0/2"
+            items: "0/2"
           - part: b
             formats: abc
             animals: "0/2"
+            items: "0/2"
           - part: c
             formats: count,odd_one_out
             animals: "0/2"
+            items: "0/2"
           - part: d
-            formats: guess_animal
+            formats: guess_animal,guess_animal,guess_animal,guess_animal,colors
             animals: "1/2"
+            items: "1/2"
           - part: e
             formats: colors,shapes
             animals: "0/2"
+            items: "0/2"
           - part: f
-            formats: abc,count,shapes,odd_one_out,colors
-            animals: "0/2"
+            formats: odd_one_out,count
+            animals: "1/2"
+            items: "1/2"
     env:
       ANIMAL_SLICE: ${{ matrix.animals }}
+      ITEM_SLICE: ${{ matrix.items }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -50,8 +59,16 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+      - name: Get the list of videos already waiting in the bank
+        run: |
+          mkdir -p used
+          gh release download video-bank -p "*.json" -D used --clobber 2>/dev/null || echo "bank is empty"
+          ls used | wc -l
       - name: Render 5 videos (4K)
-        run: python bot/main.py --bank 5 --bank-formats "${{ matrix.formats }}" --bank-prefix="-${{ matrix.part }}" --bank-dir bank
+        run: >
+          python bot/main.py --bank 5 --bank-formats "${{ matrix.formats }}"
+          --bank-prefix="-${{ matrix.part }}" --bank-batch "${{ github.run_number }}"
+          --bank-used used --bank-dir bank
       - uses: actions/upload-artifact@v4
         with:
           name: bank-${{ matrix.part }}

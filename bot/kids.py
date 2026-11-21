@@ -35,12 +35,20 @@ ANIMALS = [
     ("squirrel", "1f43f"), ("hedgehog", "1f994"), ("bat", "1f987"), ("eagle", "1f985"),
     ("swan", "1f9a2"), ("sloth", "1f9a5"), ("otter", "1f9a6"), ("gorilla", "1f98d"),
     ("deer", "1f98c"), ("mouse", "1f401"), ("lobster", "1f99e"), ("seal", "1f9ad"),
+    ("lizard", "1f98e"), ("ladybug", "1f41e"), ("caterpillar", "1f41b"), ("raccoon", "1f99d"),
+    ("skunk", "1f9a8"), ("beaver", "1f9ab"), ("mammoth", "1f9a3"), ("bison", "1f9ac"), ("goat", "1f410"),
+    ("ram", "1f40f"), ("leopard", "1f406"), ("orangutan", "1f9a7"), ("dodo", "1f9a4"), ("dove", "1f54a"),
+    ("blowfish", "1f421"), ("squid", "1f991"), ("shrimp", "1f990"), ("wolf", "1f43a"), ("badger", "1f9a1"),
+    ("poodle", "1f429"), ("tiger", "1f405"), ("water buffalo", "1f403"), ("ox", "1f402"),
 ]
 COUNT_ITEMS = [
     ("apples", "1f34e"), ("bananas", "1f34c"), ("strawberries", "1f353"), ("oranges", "1f34a"),
     ("balloons", "1f388"), ("stars", "2b50"), ("cars", "1f697"), ("ducks", "1f986"),
     ("cupcakes", "1f9c1"), ("watermelons", "1f349"), ("rockets", "1f680"), ("fish", "1f41f"),
     ("teddy bears", "1f9f8"), ("ice creams", "1f366"), ("donuts", "1f369"), ("butterflies", "1f98b"),
+    ("lollipops", "1f36d"), ("pineapples", "1f34d"), ("cherries", "1f352"), ("carrots", "1f955"),
+    ("cookies", "1f36a"), ("sunflowers", "1f33b"), ("tulips", "1f337"), ("bees", "1f41d"), ("bikes", "1f6b2"),
+    ("soccer balls", "26bd"), ("gifts", "1f381"), ("crowns", "1f451"),
 ]
 COLORS = [
     ("RED", (239, 68, 68), [("apple", "1f34e"), ("strawberry", "1f353"), ("fire truck", "1f692")]),
@@ -57,6 +65,9 @@ ODD_PAIRS = [
     ("1f353", "1f352", "cherries"), ("1f431", "1f42f", "tiger"), ("1f34b", "1f34c", "banana"),
     ("1f436", "1f43a", "wolf"), ("1f414", "1f424", "chick"), ("1f41f", "1f420", "tropical fish"),
     ("1f34a", "1f3c0", "basketball"), ("1f438", "1f422", "turtle"), ("1f34f", "1f350", "pear"),
+    ("1f43b", "1f43c", "panda"), ("1f42d", "1f430", "rabbit"), ("1f34e", "1f351", "peach"),
+    ("1f34a", "1f351", "peach"), ("1f31e", "1f31d", "moon"), ("2b50", "1f31f", "glowing star"),
+    ("1f41d", "1f41e", "ladybug"), ("1f427", "1f426", "bird"), ("1f36a", "1f369", "donut"),
 ]
 KID_PALETTES = [  # top, bottom, accent
     ((56, 189, 248), (37, 99, 235), (250, 204, 21)),
@@ -73,6 +84,15 @@ def make(main_module):
     global M
     M = main_module
     return pick
+
+
+def sliced(items):
+    """ITEM_SLICE=k/m gives parallel bank jobs different items (count, odd one out)."""
+    sl = __import__("os").getenv("ITEM_SLICE")
+    if not sl:
+        return items
+    k, m = (int(x) for x in sl.split("/"))
+    return [x for i, x in enumerate(items) if i % m == k] or items
 
 
 _cache = {}
@@ -326,8 +346,9 @@ def guess_animal(workdir, final, used):
 
 
 def count(workdir, final, used):
-    fresh = [i for i in COUNT_ITEMS if not any(k.startswith(f"count:{i[0]}:") for k in used)]
-    item, code = random.choice(fresh or COUNT_ITEMS)
+    pool_c = sliced(COUNT_ITEMS)
+    fresh = [i for i in pool_c if not any(k.startswith(f"count:{i[0]}:") for k in used)]
+    item, code = random.choice(fresh or pool_c)
     n = random.randint(5, 9)
     pal = FORCE_PAL or random.choice(KID_PALETTES)
     sc = Scene(workdir, pal)
@@ -443,8 +464,9 @@ def colors(workdir, final, used):
 
 
 def odd_one_out(workdir, final, used):
-    fresh = [p for p in ODD_PAIRS if f"odd:{p[0]}:{p[1]}" not in used]
-    a, b, bname = random.choice(fresh or ODD_PAIRS)
+    pool_o = sliced(ODD_PAIRS)
+    fresh = [p for p in pool_o if f"odd:{p[0]}:{p[1]}" not in used]
+    a, b, bname = random.choice(fresh or pool_o)
     pal = FORCE_PAL or random.choice(KID_PALETTES)
     sc = Scene(workdir, pal)
     acc = pal[2] if pal[2] != (255, 255, 255) else (250, 204, 21)
@@ -517,7 +539,7 @@ ABC = {
     "S": [("sun", "1f31e"), ("star", "2b50")], "T": [("tiger", "1f405"), ("tree", "1f333")],
     "U": [("umbrella", "2614"), ("unicorn", "1f984")], "V": [("violin", "1f3bb"), ("volcano", "1f30b")],
     "W": [("whale", "1f40b"), ("watermelon", "1f349")], "X": [("fox", "1f98a"), ("box", "1f4e6")],
-    "Y": [("yo-yo", "1fa80"), ("yak", "1f9ac")], "Z": [("zebra", "1f993")],
+    "Y": [("yo-yo", "1fa80")], "Z": [("zebra", "1f993")],
 }
 LETTER_COLORS = [(239, 68, 68), (249, 115, 22), (234, 179, 8), (34, 197, 94), (59, 130, 246), (168, 85, 247),
                  (236, 72, 153)]

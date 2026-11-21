@@ -687,6 +687,8 @@ def main():
     ap.add_argument("--bank-dir", default=str(ROOT / "bank"))
     ap.add_argument("--bank-formats", help="comma list, e.g. guess_animal,count")
     ap.add_argument("--bank-prefix", default="", help="suffix that keeps parallel batches apart, e.g. -a")
+    ap.add_argument("--bank-batch", default="", help="batch number so new files never overwrite old ones")
+    ap.add_argument("--bank-used", help="folder of .json files of videos already in the bank (to avoid repeats)")
     ap.add_argument("--video", help="upload this ready-made mp4 (needs --meta)")
     ap.add_argument("--meta")
     args = ap.parse_args()
@@ -737,13 +739,22 @@ def main():
         bank_dir.mkdir(parents=True, exist_ok=True)
         formats = (args.bank_formats or "kids").split(",")
         work_hist = list(history)
+        if args.bank_used and pathlib.Path(args.bank_used).exists():  # videos already waiting in the bank
+            for jf in pathlib.Path(args.bank_used).glob("*.json"):
+                try:
+                    m = json.loads(jf.read_text(encoding="utf-8"))
+                    work_hist.append({"format": m.get("format"), "key": m.get("key", ""), "keys": m.get("keys", [])})
+                except Exception:
+                    pass
+            log(f"bank: skipping items from {len(work_hist) - len(history)} videos already in the bank")
         made = 0
         for i in range(args.bank):
             fmt_i = formats[i % len(formats)]
             stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
             wd = OUT / f"bank-{stamp}-{i}"
             wd.mkdir(parents=True, exist_ok=True)
-            name = f"bank-{i:02d}{args.bank_prefix}"
+            name = (f"bank-{int(args.bank_batch):03d}-{i:02d}{args.bank_prefix}" if args.bank_batch
+                    else f"bank-{i:02d}{args.bank_prefix}")
             final = bank_dir / f"{name}.mp4"
             meta = make_kids(wd, final, work_hist, fmt_i)
             if meta is None:
