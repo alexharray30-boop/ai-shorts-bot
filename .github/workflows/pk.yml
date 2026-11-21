@@ -10,6 +10,10 @@ on:
         type: choice
         options: [test, upload]
         default: test
+      format:
+        description: "optional: make this format fresh instead of using the bank (gk, cricket, paheli, fact, gta)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -61,7 +65,12 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           if [ "${{ inputs.mode }}" = "test" ]; then
-            python bot/main.py --dry-run
+            python bot/main.py --dry-run ${{ inputs.format && format('--format {0}', inputs.format) || '' }}
+            exit 0
+          fi
+          if [ -n "${{ inputs.format }}" ]; then
+            echo "Making a fresh ${{ inputs.format }} video"
+            python bot/main.py --force --format "${{ inputs.format }}"
             exit 0
           fi
           # 1) next ready-made video from the video bank, if any

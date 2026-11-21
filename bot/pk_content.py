@@ -195,3 +195,27 @@ FACTS = [
     ("Karakoram Highway duniya ki sab se oonchi pakki sarkon mein se hai!", "قراقرم ہائی وے دنیا کی سب سے اونچی پکی سڑکوں میں سے ہے!", "1f6e3"),
     ("Insaan ki naak hazaron qisam ki khushboo pehchan sakti hai!", "انسان کی ناک ہزاروں قسم کی خوشبو پہچان سکتی ہے!", "1f443"),
 ]
+
+# GTA quiz: only long-established public facts, no game footage or artwork is used
+GTA = [
+    ("GTA 6 kis company ne banaya hai?", "جی ٹی اے سکس کس کمپنی نے بنایا ہے؟",
+     ["Ubisoft", "EA Games", "Rockstar Games", "Activision"], 2, "راک اسٹار گیمز"),
+    ("GTA 6 ki kahani kis state mein hai?", "جی ٹی اے سکس کی کہانی کس اسٹیٹ میں ہے؟",
+     ["San Andreas", "Leonida", "North Yankton", "Liberty State"], 1, "لیونیڈا"),
+    ("GTA 6 mein kaun sa mashhoor shehar wapas aa raha hai?", "جی ٹی اے سکس میں کون سا مشہور شہر واپس آ رہا ہے؟",
+     ["Los Santos", "Liberty City", "Vice City", "San Fierro"], 2, "وائس سٹی"),
+    ("GTA 6 ke do main characters kaun hain?", "جی ٹی اے سکس کے دو مین کردار کون ہیں؟",
+     ["Michael aur Trevor", "Lucia aur Jason", "CJ aur Ryder", "Niko aur Roman"], 1, "لوسیا اور جیسن"),
+    ("GTA 5 kis saal release hua tha?", "جی ٹی اے فائیو کس سال ریلیز ہوا تھا؟",
+     ["2008", "2011", "2013", "2015"], 2, "دو ہزار تیرہ"),
+    ("GTA 6 ka pehla trailer kab aaya tha?", "جی ٹی اے سکس کا پہلا ٹریلر کب آیا تھا؟",
+     ["December 2022", "December 2023", "May 2024", "May 2025"], 1, "دسمبر دو ہزار تئیس"),
+    ("GTA ka poora naam kya hai?", "جی ٹی اے کا پورا نام کیا ہے؟",
+     ["Grand Theft Auto", "Great Track Adventure", "Game Time Action", "Grand Turbo Arena"], 0, "گرینڈ تھیفٹ آٹو"),
+    ("GTA 5 ka shehar kaun sa hai?", "جی ٹی اے فائیو کا شہر کون سا ہے؟",
+     ["Vice City", "Liberty City", "Los Santos", "Las Venturas"], 2, "لاس سانتوس"),
+    ("Vice City asal zindagi ke kis shehar jaisa hai?", "وائس سٹی اصل زندگی کے کس شہر جیسا ہے؟",
+     ["Miami", "New York", "Chicago", "Dubai"], 0, "میامی"),
+    ("Liberty City asal zindagi ke kis shehar jaisa hai?", "لبرٹی سٹی اصل زندگی کے کس شہر جیسا ہے؟",
+     ["Los Angeles", "New York", "London", "Toronto"], 1, "نیو یارک"),
+]

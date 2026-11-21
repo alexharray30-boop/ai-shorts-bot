@@ -28,6 +28,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -435,6 +436,7 @@ def tts(text, path, max_len):
                 break
             except Exception as e:
                 log(f"tts attempt {attempt + 1} failed:", e)
+                time.sleep(2 + 2 * attempt)
         else:
             return 0.0
         dur = probe_duration(path)
@@ -686,7 +688,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--check-only", action="store_true")
     ap.add_argument("--format", choices=["kids", "riddle", "guess_animal", "count", "colors", "odd_one_out",
-                                         "abc", "shapes", "gk", "cricket", "paheli", "fact"])
+                                         "abc", "shapes", "gk", "cricket", "paheli", "fact", "gta"])
     ap.add_argument("--bank", type=int, help="make this many videos for the video bank (no upload)")
     ap.add_argument("--bank-dir", default=str(ROOT / "bank"))
     ap.add_argument("--bank-formats", help="comma list, e.g. guess_animal,count")

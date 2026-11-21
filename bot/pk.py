@@ -14,7 +14,7 @@ import random
 from PIL import Image, ImageDraw
 
 import kids
-from pk_content import CRICKET, FACTS, GK, PAHELIYAN
+from pk_content import CRICKET, FACTS, GK, GTA, PAHELIYAN
 
 M = None
 VOICE = "ur-PK-AsadNeural"
@@ -35,6 +35,9 @@ LONG_INFO = {
     "paheli": (["URDU", "PAHELIYAN!"], "کیا آپ یہ پہیلیاں بوجھ سکتے ہیں؟",
                ["Urdu Paheliyan 🤔 Bujho To Jaanein!", "{n} Mazedaar Paheliyan 🧩 Dimagh Lagao",
                 "Paheliyan with Answers in Urdu 🤔 Kitni Bujh Sakte Ho?"]),
+    "gta": (["GTA 6", "QUIZ!"], "جی ٹی اے سکس کوئز! کیا آپ اصلی گیمر ہیں؟",
+            ["GTA 6 Quiz in Urdu 🎮 Sirf Asli Gamer Jawab Dega", "GTA 6 Ke {n} Sawal 🎮 Kitne Sahi Kar Sakte Ho?",
+             "GTA 6 Quiz 🌴🚗 Vice City Wapas! Urdu Mein"]),
     "fact": (["KYA AAP", "JANTE HAIN?"], "کیا آپ جانتے ہیں؟ یہ حیرت انگیز باتیں!",
              ["Kya Aap Jante Hain? 🤯 Amazing Facts in Urdu", "{n} Hairat Angez Facts 😱 Urdu Mein",
               "Amazing Facts in Urdu 🤯 Dimagh Hila Dene Wale"]),
@@ -234,17 +237,28 @@ def fact(workdir, final, used):
             "description": "Kya Aap Jante Hain? 🤯 Hairat angez facts Urdu mein!", "tags": TAGS}
 
 
-FORMATS = [(gk, 3), (cricket, 2), (paheli, 3), (fact, 2)]
+def gta(workdir, final, used):
+    return _quiz(workdir, final, used, "gta", GTA, "GTA 6 QUIZ", "1f3ae")
+
+
+NEON = [((236, 72, 153), (49, 10, 101), (34, 211, 238)), ((168, 85, 247), (20, 8, 60), (250, 204, 21)),
+        ((249, 115, 22), (88, 12, 80), (34, 211, 238))]
+FORMATS = [(gk, 3), (cricket, 2), (paheli, 3), (fact, 2)]  # gta only on request
 
 
 def pick(workdir, final, history, force_format=None):
     if force_format:
-        fn = dict((f.__name__, f) for f, _ in FORMATS)[force_format]
+        fn = dict((f.__name__, f) for f, _ in FORMATS + [(gta, 0)])[force_format]
     else:
         recent = [h.get("format", "").replace("_long", "") for h in history[-2:]]
         opts = [(f, w) for f, w in FORMATS if f.__name__ not in recent] or FORMATS
         fn = random.choices([f for f, _ in opts], weights=[w for _, w in opts])[0]
-    meta = kids.pick_long(workdir, final, history, fn)
+    if fn is gta:
+        kids.STYLE["palettes"] = NEON
+    try:
+        meta = kids.pick_long(workdir, final, history, fn)
+    finally:
+        kids.STYLE["palettes"] = PALETTES
     meta["made_for_kids"] = False
     meta["channel"] = "pk"
     return meta
