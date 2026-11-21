@@ -1,0 +1,93 @@
+name: Kismat Kahaniyan (Daily videos channel)
+
+on:
+  schedule:
+    - cron: "7 * * * *"    # checks every hour; uploads when 4.5h have passed (~every 5 hours)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "test = make video only (download from Artifacts), upload = upload now"
+        type: choice
+        options: [test, upload]
+        default: test
+      format:
+        description: "unused for stories"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: story-channel
+  cancel-in-progress: false
+
+jobs:
+  shorts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CHANNEL: story
+      YT3_CLIENT_ID: ${{ secrets.YT3_CLIENT_ID }}
+      YT3_CLIENT_SECRET: ${{ secrets.YT3_CLIENT_SECRET }}
+      YT3_REFRESH_TOKEN: ${{ secrets.YT3_REFRESH_TOKEN }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      MIN_HOURS_BETWEEN_UPLOADS: "4.5"  # own Google Cloud project, own quota
+      VIDEO_SECONDS: "10"
+      PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS || 'public' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Is an upload due?
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "due=true" >> "$GITHUB_OUTPUT"
+          else
+            python bot/main.py --check-only
+          fi
+
+      - name: Install FFmpeg
+        if: steps.check.outputs.due == 'true'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+
+      - name: Make (and upload) the Short
+        if: steps.check.outputs.due == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ "${{ inputs.mode }}" = "test" ]; then
+            python bot/main.py --dry-run ${{ inputs.format && format('--format {0}', inputs.format) || '' }}
+            exit 0
+          fi
+          if [ -n "${{ inputs.format }}" ]; then
+            echo "Making a fresh ${{ inputs.format }} video"
+            python bot/main.py --force --format "${{ inputs.format }}"
+            exit 0
+          fi
+          python bot/main.py --force
+
+      - name: Keep the video for 3 days (Actions -> run -> Artifacts)
+        if: steps.check.outputs.due == 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: story-${{ github.run_id }}
+          path: out/
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Save history
+        if: steps.check.outputs.due == 'true'
+        run: |
+          git config user.name "ai-shorts-bot"
+          git config user.email "ai-shorts-bot@users.noreply.github.com"
+          git add state/ || true
+          git diff --cached --quiet || (git commit -m "bot: upload log" && (git push || (git pull --rebase && git push)))

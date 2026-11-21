@@ -40,8 +40,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "out"
 FONTS = ROOT / "fonts"
 CHANNEL = os.getenv("CHANNEL", "kids")  # "kids" = AI Adventure Kids, "pk" = Pakistan quiz channel
-STATE_FILE = ROOT / "state" / ("pk_history.json" if CHANNEL == "pk" else "history.json")
-YT_KEYS = tuple(("YT2_" if CHANNEL == "pk" else "YT_") + k for k in ("CLIENT_ID", "CLIENT_SECRET", "REFRESH_TOKEN"))
+STATE_FILE = ROOT / "state" / {"pk": "pk_history.json", "story": "story_history.json"}.get(CHANNEL, "history.json")
+YT_KEYS = tuple({"pk": "YT2_", "story": "YT3_"}.get(CHANNEL, "YT_") + k for k in ("CLIENT_ID", "CLIENT_SECRET", "REFRESH_TOKEN"))
 MUSIC_DIR = ROOT / "music"
 
 SCALE = float(os.getenv("RENDER_SCALE", "1"))  # 1 = 4K, 0.5 = 1080p (fast tests)
@@ -163,18 +163,20 @@ def upload(yt, path, meta):
 
     if os.getenv("SEO", "1") == "1":
         import seo
-        if CHANNEL == "pk" or meta.get("channel") == "pk":
+        if CHANNEL == "story" or meta.get("channel") == "story":
+            pass  # stories carry their own titles and tags
+        elif CHANNEL == "pk" or meta.get("channel") == "pk":
             meta = seo.enhance_pk(meta, log)  # live Pakistan search phrases
         elif meta.get("made_for_kids"):
             meta = seo.enhance(meta, log)  # live US/UK search phrases
 
-    pk_channel = CHANNEL == "pk" or meta.get("channel") == "pk"
+    pk_channel = CHANNEL in ("pk", "story") or meta.get("channel") in ("pk", "story")
     body = {
         "snippet": {
             "title": meta["title"][:100],
             "description": meta["description"][:4900],
             "tags": fit_tags(meta["tags"]),
-            "categoryId": "27" if (meta.get("made_for_kids") or pk_channel) else "24",  # Education
+            "categoryId": "27" if (meta.get("made_for_kids") or (pk_channel and meta.get("channel") != "story" and CHANNEL != "story")) else "24",  # Education / Entertainment
             "defaultLanguage": "ur" if pk_channel else "en",
             "defaultAudioLanguage": "ur" if pk_channel else "en",
         },
@@ -804,7 +806,7 @@ def main():
 
     fmt = args.format
     if fmt is None:
-        fmt = "kids" if (CHANNEL == "pk" or random.random() < KIDS_SHARE) else "riddle"
+        fmt = "kids" if (CHANNEL in ("pk", "story") or random.random() < KIDS_SHARE) else "riddle"
 
     meta = None
     if fmt != "riddle":
@@ -840,7 +842,9 @@ def make_kids(workdir, final, history, fmt):
     import traceback
     import kids
     engine = kids
-    if CHANNEL == "pk":
+    if CHANNEL == "story":
+        import story as engine
+    elif CHANNEL == "pk":
         import pk as engine
     base = SCALE
     scales = [base] + ([0.5] if base > 0.5 else [])
