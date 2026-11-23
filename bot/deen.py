@@ -7,6 +7,9 @@ import glob
 import os
 import random
 import re
+import shutil
+import subprocess
+import tempfile
 
 from PIL import Image, ImageDraw, ImageFont, features
 
@@ -47,8 +50,29 @@ def _ar_font(size):
     raise RuntimeError("Arabic text shaping (raqm) is not available - refusing to render broken Arabic")
 
 
+def _pango_block(text, w, h, start, color):
+    """Arabic via Pango (HarfBuzz): correct joining AND correct placement of every zer, zabar, pesh."""
+    hexcol = "#%02x%02x%02x" % tuple(color[:3])
+    size = start
+    with tempfile.TemporaryDirectory() as td:
+        while True:
+            out = os.path.join(td, f"a{size}.png")
+            subprocess.run(["pango-view", "--no-display", "-q", f"--output={out}", f"--font=Amiri {size}",
+                            "--dpi=72", f"--width={w}", "--wrap=word", "--align=center", "--rtl",
+                            "--background=transparent", f"--foreground={hexcol}", "--margin=0",
+                            "--line-spacing=1.05", f"--text={text}"], check=True)
+            img = Image.open(out).convert("RGBA")
+            if img.height <= h or size <= M.S(70):
+                return img
+            size = int(size * 0.92)
+
+
 def arabic_block(text, w, h, start, color):
     """Transparent layer with centred, correctly shaped right-to-left Arabic, wrapped to fit."""
+    if shutil.which("pango-view"):
+        return _pango_block(text, w, h, start, color)
+    if os.getenv("DEEN_ALLOW_NO_RAQM") != "1":
+        raise RuntimeError("pango-view is missing - refusing to render Arabic with misplaced harakat")
     size = start
     while True:
         f, raqm = _ar_font(size)
