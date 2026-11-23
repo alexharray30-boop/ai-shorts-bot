@@ -2,7 +2,7 @@ name: Riddle Shorts Bot (4K)
 
 on:
   schedule:
-    - cron: "17 * * * *"   # checks every hour; uploads only when 4.5h have passed (~every 5 hours)
+    - cron: "17 * * * *"   # checks every hour; 3 Shorts a day (7.5h gap), 2 on long-video days Mon/Wed/Fri (11h gap)
   workflow_dispatch:
     inputs:
       mode:
@@ -39,6 +39,18 @@ jobs:
           cache: pip
 
       - run: pip install -r requirements.txt
+
+      - name: Long-video day? Then one Short less
+        # Mon/Wed/Fri the long kids video also uses this Google project's quota
+        # (quota day = Pacific time). 11h gap -> 2 Shorts + 1 long + 3 Dimagh Lagao = 6.
+        run: |
+          DOW=$(TZ=America/Los_Angeles date +%u)
+          if [ "$DOW" = "1" ] || [ "$DOW" = "3" ] || [ "$DOW" = "5" ]; then
+            echo "MIN_HOURS_BETWEEN_UPLOADS=11" >> "$GITHUB_ENV"
+            echo "Long-video day: 11h gap (2 Shorts today)"
+          else
+            echo "Normal day: 7.5h gap (3 Shorts today)"
+          fi
 
       - name: Is an upload due?
         id: check
