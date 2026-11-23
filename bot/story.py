@@ -68,7 +68,7 @@ def cloudflare_login():
                 return _CF
         except Exception:
             pass
-    for t in pieces:  # token works but cannot list accounts: fall back to a pasted 32-character id
+    for t in sorted((w for w in pieces if w.lower() not in hex_ids), key=len, reverse=True):  # pasted id + longest piece
         for acc in hex_ids:
             if t.lower() != acc:
                 _CF = (t, acc)
