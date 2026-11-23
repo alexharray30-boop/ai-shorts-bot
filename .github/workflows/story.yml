@@ -2,7 +2,7 @@ name: Kismat Kahaniyan (Daily videos channel)
 
 on:
   schedule:
-    - cron: "7 * * * *"    # checks every hour; uploads when 4.5h have passed (~every 5 hours)
+    - cron: "7 * * * *"    # checks every hour; uploads when 7.5h have passed (~3 a day)
   workflow_dispatch:
     inputs:
       mode:
@@ -35,7 +35,7 @@ jobs:
       CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
       CF_ACCOUNT: ${{ vars.CF_ACCOUNT }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      MIN_HOURS_BETWEEN_UPLOADS: "4.5"  # own Google Cloud project, own quota
+      MIN_HOURS_BETWEEN_UPLOADS: "7.5"  # ~3 Shorts a day (own project; quota allows up to ~6)
       VIDEO_SECONDS: "10"
       PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS || 'public' }}
     steps:
