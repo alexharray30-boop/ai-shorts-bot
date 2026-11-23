@@ -187,11 +187,22 @@ def upload(yt, path, meta):
     }
 
     def _do(b):
-        media = MediaFileUpload(str(path), mimetype="video/mp4", resumable=True, chunksize=-1)
+        # 32 MB pieces: big 4K long videos broke the connection when sent in one request ("Broken pipe").
+        # A failed piece is retried; the resumable upload continues where it stopped.
+        media = MediaFileUpload(str(path), mimetype="video/mp4", resumable=True, chunksize=32 * 1024 * 1024)
         req = yt.videos().insert(part="snippet,status", body=b, media_body=media)
-        resp = None
+        resp, fails = None, 0
         while resp is None:
-            _, resp = req.next_chunk()
+            try:
+                status, resp = req.next_chunk(num_retries=5)
+                if status:
+                    log(f"upload {int(status.progress() * 100)}%")
+            except (BrokenPipeError, ConnectionError, OSError) as e:
+                fails += 1
+                if fails > 8:
+                    raise
+                log(f"upload piece failed ({e}), retrying in {10 * fails}s")
+                time.sleep(10 * fails)
         return resp
 
     try:
