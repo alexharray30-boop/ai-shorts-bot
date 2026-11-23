@@ -136,12 +136,16 @@ SEEDS_PK = {
     "fact": ["amazing facts urdu", "amazing facts in urdu", "kya aap jante hain", "interesting facts in urdu",
              "amazing facts shorts"],
     "gta": ["gta 6", "gta 6 quiz", "gta vi", "gta 6 facts", "gta vice city"],
+    "islami": ["islamic quiz in urdu", "islamic questions in urdu", "islami sawal jawab", "islamic gk",
+               "islamic quiz"],
+    "game": ["gaming quiz", "free fire quiz", "pubg quiz", "minecraft quiz", "gamer quiz urdu"],
     "_all": ["urdu quiz", "quiz in urdu", "dimagh lagao"],
 }
 MAIN_PK = {"gk": "GK Quiz in Urdu", "cricket": "Cricket Quiz Pakistan", "paheli": "Urdu Paheliyan",
-           "fact": "Amazing Facts in Urdu", "gta": "GTA 6 Quiz"}
+           "fact": "Amazing Facts in Urdu", "gta": "GTA 6 Quiz", "islami": "Islamic Quiz in Urdu",
+           "game": "Gaming Quiz"}
 HASHTAG_PK = {"gk": "#gkquiz", "cricket": "#cricketquiz", "paheli": "#paheliyan", "fact": "#amazingfacts",
-              "gta": "#gta6"}
+              "gta": "#gta6", "islami": "#islamicquiz", "game": "#gamingquiz"}
 BLOCK_PK = re.compile(
     r"\b(hub|world|point|master|channel|ducky|techno|gamerz|bhai|hindi|english|tamil|bangla|bengali|"
     r"kaise|banaye|song|songs|live|stream|trailer|gameplay|ending|leak|leaks|download|apk|mod|"

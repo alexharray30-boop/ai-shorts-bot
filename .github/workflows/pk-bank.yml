@@ -1,10 +1,19 @@
 name: Dimagh Lagao - Make Video Bank (4K)
 
-# Renders one-minute 4K Urdu videos (GK quiz, cricket quiz, paheliyan, facts) for the
-# Pakistan channel and stores them in the private release "pk-bank".
+# Renders one-minute 4K Urdu videos (5 questions each: GK, Islami, cricket, paheliyan, facts, gaming,
+# GTA 6) for the Pakistan channel and stores them in the release "pk-bank".
+# A planner first gives every parallel job its own questions, so no question repeats in any video and
+# nothing already uploaded or already in the bank is used again.
 
 on:
   workflow_dispatch:
+    inputs:
+      plan:
+        description: "format:videos list (formats: gk, islami, cricket, paheli, fact, game, gta)"
+        default: "islami:20,gk:20,cricket:15,paheli:15,fact:15,game:10,gta:5"
+      per_job:
+        description: "videos per parallel job"
+        default: "5"
 
 permissions:
   contents: write
@@ -14,27 +23,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  make:
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    outputs:
+      matrix: ${{ steps.p.outputs.matrix }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Check all questions (shape, duplicates, answers, emoji)
+        run: python tools/check_pk_content.py
+      - name: Videos already waiting in the bank
+        run: |
+          mkdir -p used
+          gh release download pk-bank -p "*.json" -D used --clobber 2>/dev/null || echo "bank is empty"
+          ls used | wc -l
+      - name: Give every job its own questions
+        id: p
+        run: python tools/pk_plan.py "${{ inputs.plan }}" --per-job ${{ inputs.per_job }} --used used >> "$GITHUB_OUTPUT"
+
+  make:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - part: a
-            formats: gk
-            n: 3
-          - part: b
-            formats: cricket
-            n: 2
-          - part: c
-            formats: paheli
-            n: 3
-          - part: d
-            formats: fact
-            n: 2
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       CHANNEL: pk
+      PK_ALLOW: ${{ matrix.allow }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
@@ -45,15 +68,11 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
-      - name: Get the list of videos already waiting in the bank
-        run: |
-          mkdir -p used
-          gh release download pk-bank -p "*.json" -D used --clobber 2>/dev/null || echo "bank is empty"
       - name: Render videos (4K)
         run: >
           python bot/main.py --bank ${{ matrix.n }} --bank-formats "${{ matrix.formats }}"
           --bank-prefix="-${{ matrix.part }}" --bank-batch "${{ github.run_number }}"
-          --bank-used used --bank-dir bank
+          --bank-dir bank
       - uses: actions/upload-artifact@v4
         with:
           name: pk-bank-${{ matrix.part }}
@@ -75,9 +94,10 @@ jobs:
           merge-multiple: true
       - name: Save videos in the "pk-bank" release
         run: |
-          ls -la bank
+          ls bank | wc -l
           gh release view pk-bank >/dev/null 2>&1 || \
             gh release create pk-bank --title "Dimagh Lagao Video Bank" --latest=false \
               --notes "Ready-made Urdu videos for the Pakistan channel."
-          gh release upload pk-bank bank/* --clobber
-          gh release view pk-bank --json assets -q '.assets[].name' | grep '\.mp4$' | sort
+          for i in 1 2 3; do gh release upload pk-bank bank/* --clobber && break || sleep 30; done
+          echo "Videos waiting in the bank:"
+          gh release view pk-bank --json assets -q '.assets[].name' | grep -c '\.mp4$'

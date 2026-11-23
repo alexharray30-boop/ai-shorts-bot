@@ -219,3 +219,15 @@ GTA = [
     ("Liberty City asal zindagi ke kis shehar jaisa hai?", "لبرٹی سٹی اصل زندگی کے کس شہر جیسا ہے؟",
      ["Los Angeles", "New York", "London", "Toronto"], 1, "نیو یارک"),
 ]
+
+
+# ---- added Nov 2026 (appended, so the index of every older item - and the history keys - stay the same) ----
+from pk_islami import ISLAMI  # noqa: E402
+from pk_more import CRICKET2, GK2  # noqa: E402
+from pk_more2 import FACTS2, GAME, GTA2, PAHELIYAN2  # noqa: E402
+
+GK += GK2
+CRICKET += CRICKET2
+PAHELIYAN += PAHELIYAN2
+FACTS += FACTS2
+GTA += GTA2

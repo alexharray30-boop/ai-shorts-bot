@@ -9,12 +9,13 @@ Pakistan channel formats (4K, Urdu voice, Roman Urdu on screen)
 Reuses the drawing / audio engine from kids.py.
 """
 import math
+import os
 import random
 
 from PIL import Image, ImageDraw
 
 import kids
-from pk_content import CRICKET, FACTS, GK, GTA, PAHELIYAN
+from pk_content import CRICKET, FACTS, GAME, GK, GTA, ISLAMI, PAHELIYAN
 
 M = None
 VOICE = "ur-PK-UzmaNeural"  # clear Pakistani female voice; Gul and Asad are backups
@@ -38,6 +39,12 @@ LONG_INFO = {
     "gta": (["GTA 6", "QUIZ!"], "جی ٹی اے سکس کوئز! کیا آپ اصلی گیمر ہیں؟",
             ["GTA 6 Quiz in Urdu 🎮 Sirf Asli Gamer Jawab Dega", "GTA 6 Ke {n} Sawal 🎮 Kitne Sahi Kar Sakte Ho?",
              "GTA 6 Quiz 🌴🚗 Vice City Wapas! Urdu Mein"]),
+    "islami": (["ISLAMI", "QUIZ!"], "اسلامی سوالات! کیا آپ ان کے جواب جانتے ہیں؟",
+               ["Islamic Quiz in Urdu 🕌 Kya Aap {n} Sawal Ka Jawab Jante Hain?", "Islami Sawal Jawab 🕌 {n} Sawal Urdu Mein",
+                "Islamic GK Quiz Urdu 🕌 Kitne Sahi Kar Sakte Hain?"]),
+    "game": (["GAMER", "QUIZ!"], "گیمرز کے لیے کوئز! کیا آپ اصلی گیمر ہیں؟",
+             ["Gaming Quiz in Urdu 🎮 Free Fire, PUBG, Minecraft", "Sirf Asli Gamer Jawab Dega 🎮 {n} Sawal",
+              "Gamer Quiz 🎮 PUBG, Free Fire aur Minecraft Ke Sawal"]),
     "fact": (["KYA AAP", "JANTE HAIN?"], "کیا آپ جانتے ہیں؟ یہ حیرت انگیز باتیں!",
              ["Kya Aap Jante Hain? 🤯 Amazing Facts in Urdu", "{n} Hairat Angez Facts 😱 Urdu Mein",
               "Amazing Facts in Urdu 🤯 Dimagh Hila Dene Wale"]),
@@ -103,9 +110,14 @@ def option_pill(letter, text, state, acc):
     return card
 
 
+# PK_ALLOW (set by the bank planner): the only items this job may use, so parallel jobs never repeat
+_ALLOW = {k.strip() for k in os.getenv("PK_ALLOW", "").split(",") if k.strip()}
+
+
 def _pick_index(prefix, items, used):
-    fresh = [i for i in range(len(items)) if f"{prefix}:{i}" not in used]
-    return random.choice(fresh or list(range(len(items))))
+    pool = [i for i in range(len(items)) if not _ALLOW or f"{prefix}:{i}" in _ALLOW] or list(range(len(items)))
+    fresh = [i for i in pool if f"{prefix}:{i}" not in used]
+    return random.choice(fresh or pool)
 
 
 def _quiz(workdir, final, used, prefix, bank, title, icon):
@@ -241,9 +253,17 @@ def gta(workdir, final, used):
     return _quiz(workdir, final, used, "gta", GTA, "GTA 6 QUIZ", "1f3ae")
 
 
+def islami(workdir, final, used):
+    return _quiz(workdir, final, used, "islami", ISLAMI, "ISLAMI QUIZ", "1f54c")
+
+
+def game(workdir, final, used):
+    return _quiz(workdir, final, used, "game", GAME, "GAMER QUIZ", "1f3ae")
+
+
 NEON = [((236, 72, 153), (49, 10, 101), (34, 211, 238)), ((168, 85, 247), (20, 8, 60), (250, 204, 21)),
         ((249, 115, 22), (88, 12, 80), (34, 211, 238))]
-FORMATS = [(gk, 3), (cricket, 2), (paheli, 3), (fact, 2)]  # gta only on request
+FORMATS = [(gk, 3), (islami, 3), (cricket, 2), (paheli, 3), (fact, 2), (game, 1)]  # gta only on request
 
 
 def pick(workdir, final, history, force_format=None):
@@ -253,7 +273,7 @@ def pick(workdir, final, history, force_format=None):
         recent = [h.get("format", "").replace("_long", "") for h in history[-2:]]
         opts = [(f, w) for f, w in FORMATS if f.__name__ not in recent] or FORMATS
         fn = random.choices([f for f, _ in opts], weights=[w for _, w in opts])[0]
-    if fn is gta:
+    if fn in (gta, game):
         kids.STYLE["palettes"] = NEON
     try:
         meta = kids.pick_long(workdir, final, history, fn)
