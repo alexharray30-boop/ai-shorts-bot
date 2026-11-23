@@ -811,7 +811,7 @@ def main():
     meta = None
     if fmt != "riddle":
         meta = make_kids(workdir, final, history, fmt)
-        if meta is None and fmt != "kids":
+        if meta is None and (fmt != "kids" or CHANNEL in ("pk", "story")):  # never post a riddle on other channels
             sys.exit("kids video could not be made")
     if meta is None:
         q, a, src = pick_riddle(history)

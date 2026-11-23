@@ -49,6 +49,11 @@ def fetch_cloudflare(prompt, path, seed):
     import base64
     import os
     tok, acc = os.getenv("CF_API_TOKEN", "").strip(), os.getenv("CF_ACCOUNT_ID", "").strip()
+    import re as _re
+    m = _re.search(r"[0-9a-f]{32}", acc.lower())  # paste-proof: pull the 32-character id out of a URL etc.
+    M.log("cloudflare account id:", "looks right" if m else f"WRONG FORMAT ({len(acc)} chars) - needs the 32-character Account ID")
+    acc = m.group(0) if m else acc
+    tok = tok.split()[-1] if tok else tok
     if not tok or not acc:
         return False
     full = f"{prompt}, {REAL_LOOK}"
