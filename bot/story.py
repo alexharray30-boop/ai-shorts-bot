@@ -21,7 +21,8 @@ REAL_LOOK = ("photorealistic cinematic film still, ultra detailed realistic face
              "85mm lens, shallow depth of field, dramatic movie lighting, high-end drama series, vertical 9:16 "
              "composition, fully clothed, modest, family friendly, no text, no watermark")
 XF = 0.4
-CF_MODELS = ["@cf/leonardo/lucid-origin", "@cf/black-forest-labs/flux-1-schnell"]
+# flux-1-schnell is far cheaper (many images per free day); lucid-origin looks best but only ~6 images/day free
+CF_MODELS = ["@cf/black-forest-labs/flux-1-schnell"]
 
 
 def make(main_module):
