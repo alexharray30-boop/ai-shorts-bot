@@ -31,6 +31,8 @@ jobs:
       YT3_CLIENT_ID: ${{ secrets.YT3_CLIENT_ID }}
       YT3_CLIENT_SECRET: ${{ secrets.YT3_CLIENT_SECRET }}
       YT3_REFRESH_TOKEN: ${{ secrets.YT3_REFRESH_TOKEN }}
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       MIN_HOURS_BETWEEN_UPLOADS: "4.5"  # own Google Cloud project, own quota
       VIDEO_SECONDS: "10"

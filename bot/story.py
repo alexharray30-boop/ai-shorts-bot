@@ -17,7 +17,11 @@ W, H, FPS = 1080, 1920, 30
 NARRATOR = "ur-PK-AsadNeural"
 LOOK = ("cinematic 3D animated movie still, Pixar style, dramatic lighting, emotional, detailed, vertical "
         "composition, fully clothed, modest, family friendly, no text, no watermark")
+REAL_LOOK = ("photorealistic cinematic film still, ultra detailed realistic face, natural skin texture, sharp eyes, "
+             "85mm lens, shallow depth of field, dramatic movie lighting, high-end drama series, vertical 9:16 "
+             "composition, fully clothed, modest, family friendly, no text, no watermark")
 XF = 0.4
+CF_MODELS = ["@cf/leonardo/lucid-origin", "@cf/black-forest-labs/flux-1-schnell"]
 
 
 def make(main_module):
@@ -26,7 +30,61 @@ def make(main_module):
     return pick
 
 
+def _fit(img):
+    """Fill 1080x1920. A square picture is shown full-width over a blurred, darkened copy of itself."""
+    if img.width / img.height > 0.75:
+        bg = img.resize((W, H), Image.LANCZOS).filter(ImageFilter.GaussianBlur(40))
+        bg = Image.eval(bg, lambda v: int(v * 0.55))
+        fg = img.resize((W, int(img.height * W / img.width)), Image.LANCZOS)
+        bg.paste(fg, (0, (H - fg.height) // 2 - 120))
+        return bg
+    s = max(W / img.width, H / img.height)
+    img = img.resize((int(img.width * s + 0.5), int(img.height * s + 0.5)), Image.LANCZOS)
+    l, t = (img.width - W) // 2, (img.height - H) // 2
+    return img.crop((l, t, l + W, t + H))
+
+
+def fetch_cloudflare(prompt, path, seed):
+    """Realistic images from Cloudflare Workers AI (free daily allowance). Needs CF_API_TOKEN + CF_ACCOUNT_ID."""
+    import base64
+    import os
+    tok, acc = os.getenv("CF_API_TOKEN", "").strip(), os.getenv("CF_ACCOUNT_ID", "").strip()
+    if not tok or not acc:
+        return False
+    full = f"{prompt}, {REAL_LOOK}"
+    for model in CF_MODELS:
+        body = {"prompt": full[:2000], "seed": seed % 2**31}
+        if "lucid" in model:
+            body.update(width=864, height=1536, guidance=4.5, num_steps=30)
+        else:
+            body.update(steps=8)
+        for attempt in range(3):
+            try:
+                r = requests.post(f"https://api.cloudflare.com/client/v4/accounts/{acc}/ai/run/{model}",
+                                  headers={"Authorization": f"Bearer {tok}"}, json=body, timeout=180)
+                if r.ok and r.headers.get("content-type", "").startswith("image"):
+                    path.write_bytes(r.content)
+                elif r.ok:
+                    path.write_bytes(base64.b64decode(r.json()["result"]["image"]))
+                else:
+                    M.log(f"cloudflare {model.split('/')[-1]} HTTP {r.status_code}: {r.text[:160]}")
+                    break  # try the next model
+                img = _fit(Image.open(path).convert("RGB")).filter(ImageFilter.UnsharpMask(2, 60, 2))
+                img.save(path, quality=95)
+                M.log(f"image by cloudflare {model.split('/')[-1]}")
+                return True
+            except Exception as e:
+                M.log(f"cloudflare attempt {attempt + 1} failed:", str(e)[:120])
+                time.sleep(5 * (attempt + 1))
+    return False
+
+
 def fetch_image(prompt, path, seed):
+    import os
+    if fetch_cloudflare(prompt, path, seed):
+        return True
+    if os.getenv("CF_API_TOKEN"):
+        return False  # realistic look required: never mix in the weak free cartoon images
     url = ("https://image.pollinations.ai/prompt/" + urllib.parse.quote(f"{prompt}, {LOOK}") +
            f"?width={W}&height={H}&nologo=true&safe=true&seed={seed}&model=flux")
     for attempt in range(6):
