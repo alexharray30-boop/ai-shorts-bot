@@ -1,0 +1,50 @@
+name: Kismat Kahaniyan - Long Video (Poori Kahani)
+
+# Tue / Thu / Sat: uploads the next "Poori Kahani" (all 10 parts of a suspense story in one 16:9 video).
+
+on:
+  schedule:
+    - cron: "0 14 * * 2,4,6"   # 14:00 UTC = 7 PM Pakistan
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: story-channel
+  cancel-in-progress: false
+
+jobs:
+  long:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CHANNEL: story
+      YT3_CLIENT_ID: ${{ secrets.YT3_CLIENT_ID }}
+      YT3_CLIENT_SECRET: ${{ secrets.YT3_CLIENT_SECRET }}
+      YT3_REFRESH_TOKEN: ${{ secrets.YT3_REFRESH_TOKEN }}
+      PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS || 'public' }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Upload the next long video
+        run: |
+          NEXT=$(gh release view series-long-bank --json assets -q '[.assets[].name | select(endswith(".mp4"))] | sort | .[0] // empty' 2>/dev/null || true)
+          if [ -z "$NEXT" ]; then echo "no long video ready yet"; exit 0; fi
+          mkdir -p dl
+          gh release download series-long-bank -p "$NEXT" -p "${NEXT%.mp4}.json" -D dl --clobber
+          python bot/main.py --force --video "dl/$NEXT" --meta "dl/${NEXT%.mp4}.json"
+          gh release delete-asset series-long-bank "$NEXT" -y
+          gh release delete-asset series-long-bank "${NEXT%.mp4}.json" -y || true
+      - name: Save history
+        run: |
+          git config user.name "ai-shorts-bot"
+          git config user.email "ai-shorts-bot@users.noreply.github.com"
+          git add state/ || true
+          git diff --cached --quiet || (git commit -m "bot: upload log" && (git push || (git pull --rebase && git push)))

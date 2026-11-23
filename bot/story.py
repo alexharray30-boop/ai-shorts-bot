@@ -99,7 +99,7 @@ def fetch_cloudflare(prompt, path, seed):
         if "lucid" in model:
             body.update(width=864, height=1536, guidance=4.5, num_steps=30, seed=seed % 2**31)
         else:
-            body.update(steps=8)
+            body.update(steps=int(os.getenv("CF_STEPS", "8")))
         retry_variant = False
         for attempt in range(3):
             try:

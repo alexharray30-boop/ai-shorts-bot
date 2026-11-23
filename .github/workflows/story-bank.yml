@@ -10,8 +10,7 @@ on:
       count:
         description: "how many stories to try in this run"
         default: "40"
-  schedule:
-    - cron: "30 1 * * *"   # every day 01:30 UTC: continue with stories not made yet
+  # no schedule any more: the daily Cloudflare allowance goes to the suspense series (series-bank.yml)
 
 permissions:
   contents: write

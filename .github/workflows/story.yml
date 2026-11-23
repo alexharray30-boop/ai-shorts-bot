@@ -76,7 +76,18 @@ jobs:
             python bot/main.py --force --format "${{ inputs.format }}"
             exit 0
           fi
-          # next ready-made realistic story from the bank, if any
+          # 1) next suspense series part, strictly in order (s01p01, s01p02, ...)
+          NEXT=$(gh release view series-bank --json assets -q '[.assets[].name | select(endswith(".mp4"))] | sort | .[0] // empty' 2>/dev/null || true)
+          if [ -n "$NEXT" ]; then
+            echo "Uploading series part: $NEXT"
+            mkdir -p dl
+            gh release download series-bank -p "$NEXT" -p "${NEXT%.mp4}.json" -D dl --clobber
+            python bot/main.py --force --video "dl/$NEXT" --meta "dl/${NEXT%.mp4}.json"
+            gh release delete-asset series-bank "$NEXT" -y
+            gh release delete-asset series-bank "${NEXT%.mp4}.json" -y || true
+            exit 0
+          fi
+          # 2) otherwise the next ready-made single story, if any
           NEXT=$(gh release view story-bank --json assets -q '[.assets[].name | select(endswith(".mp4"))] | sort | .[0] // empty' 2>/dev/null || true)
           if [ -n "$NEXT" ]; then
             echo "Uploading from story bank: $NEXT"
