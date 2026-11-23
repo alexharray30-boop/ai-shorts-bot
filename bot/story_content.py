@@ -194,3 +194,8 @@ STORIES = [
         ],
     },
 ]
+
+
+from story_content2 import MORE  # noqa: E402
+
+STORIES += MORE
