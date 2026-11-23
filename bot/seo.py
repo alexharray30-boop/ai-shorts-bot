@@ -204,3 +204,39 @@ def enhance_pk(meta, log=print):
     log("seo-pk: title ->", m["title"])
     log("seo-pk: top Pakistan searches ->", ", ".join(kws[:8]))
     return m
+
+
+SEEDS_SERIES = ["suspense story urdu", "urdu kahani", "mystery story urdu", "urdu story", "sachi kahani",
+                "suspense kahani", "urdu thriller story", "pakistani story", "jasoosi kahani", "emotional story urdu"]
+
+
+def enhance_series(meta, log=print):
+    """Suspense series: keep the exact searchable title ("<Name> | Part n/10"), add the phrases people in
+    Pakistan are searching right now to the tags and description."""
+    try:
+        score = {}
+        name = meta.get("tags", [""])[0]
+        for seed in [name] + SEEDS_SERIES:
+            for pos, sug in enumerate(suggestions(seed, "PK")):
+                sug = re.sub(r"\s+", " ", sug.lower()).strip()
+                if len(sug) < 4 or len(sug) > 45 or BLOCK.search(sug) or BLOCK_PK.search(sug):
+                    continue
+                score[sug] = score.get(sug, 0) + (10 - pos)
+            time.sleep(0.15)
+        kws = [k for k, _ in sorted(score.items(), key=lambda kv: -kv[1])][:20]
+    except Exception as e:
+        log("seo-series: lookup failed, keeping metadata:", e)
+        return meta
+    if len(kws) < 3:
+        return meta
+    m = dict(meta)
+    tags = []
+    for t in meta.get("tags", [])[:4] + kws + meta.get("tags", [])[4:]:
+        if t not in tags:
+            tags.append(t)
+    m["tags"] = tags
+    body = meta.get("description", "")
+    m["description"] = body + "\n\nSearch: " + ", ".join(kws[:10])
+    m["seo_keywords"] = kws
+    log("seo-series: top keywords ->", ", ".join(kws[:8]))
+    return m

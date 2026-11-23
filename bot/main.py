@@ -163,7 +163,9 @@ def upload(yt, path, meta):
 
     if os.getenv("SEO", "1") == "1":
         import seo
-        if CHANNEL in ("story", "deen") or meta.get("channel") in ("story", "deen"):
+        if str(meta.get("format", "")).startswith("series"):
+            meta = seo.enhance_series(meta, log)  # live Pakistan search phrases for suspense stories
+        elif CHANNEL in ("story", "deen") or meta.get("channel") in ("story", "deen"):
             pass  # stories carry their own titles and tags
         elif CHANNEL == "pk" or meta.get("channel") == "pk":
             meta = seo.enhance_pk(meta, log)  # live Pakistan search phrases
@@ -201,6 +203,13 @@ def upload(yt, path, meta):
         else:
             raise
     log("uploaded:", f"https://youtube.com/shorts/{resp['id']}")
+    thumb = pathlib.Path(path).with_suffix(".jpg")
+    if thumb.exists():  # custom thumbnail (long videos); needs a verified channel, so never fatal
+        try:
+            yt.thumbnails().set(videoId=resp["id"], media_body=MediaFileUpload(str(thumb), mimetype="image/jpeg")).execute()
+            log("thumbnail set")
+        except Exception as e:
+            log("thumbnail not set (channel may need phone verification):", str(e)[:200])
     return resp["id"]
 
 

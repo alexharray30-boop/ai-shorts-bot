@@ -41,6 +41,32 @@ def end_png(lines, path):
     img.save(path)
 
 
+def thumb_card(lines, path, w=W, h=H, top=None):
+    """Thumbnail-style title: dark vignette, red frame, huge gold / red / white words (used as the first frame
+    of every Short, which YouTube shows as its cover, and for the long video thumbnail)."""
+    # smooth dark vignette: light in the middle, darker towards the edges
+    m = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(m).ellipse([-w // 4, -h // 6, w + w // 4, h + h // 6], fill=255)
+    m = m.filter(ImageFilter.GaussianBlur(min(w, h) // 6))
+    alpha = m.point(lambda v: int(205 - v * 0.55))
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    img.putalpha(alpha)
+    d = ImageDraw.Draw(img)
+    bw = max(8, w // 70)
+    d.rectangle([bw, bw, w - bw, h - bw], outline=(220, 30, 30, 255), width=bw)
+    y = top if top is not None else int(h * 0.30)
+    for ln, size, col in lines:
+        f, wl, sz = M.fit_text(ln, w - 2 * w // 12, int(h * 0.3), size, "Black")
+        for word in wl:
+            tw = d.textlength(word, font=f)
+            d.text(((w - tw) / 2 + sz // 14, y + sz // 12), word, font=f, fill=(0, 0, 0, 200),
+                   stroke_width=max(6, sz // 11), stroke_fill=(0, 0, 0, 200))
+            d.text(((w - tw) / 2, y), word, font=f, fill=col, stroke_width=max(6, sz // 11), stroke_fill=(15, 5, 0))
+            y += int(sz * 1.08)
+        y += int(h * 0.02)
+    img.save(path)
+
+
 def part_meta(si, p):
     s = SERIES[si]
     n = len(s["parts"])
@@ -105,7 +131,8 @@ def render_part(workdir, final, si, p):
     finally:
         M.VOICE = old_voice
     hook = workdir / "hook.png"
-    ST.hook_png([s["name"].upper(), f"PART {p}/{n}"], hook)
+    thumb_card([(s["name"].upper(), 165, (255, 214, 64)), (f"PART {p}/{n}", 175, (255, 45, 45)),
+                (part["title"].upper() + "?" if p < n else "AAKHRI PART!", 100, (255, 255, 255))], hook)
 
     all_imgs = imgs + [endimg]
     all_durs = durs + [END]
@@ -174,7 +201,7 @@ def render_part(workdir, final, si, p):
     fc.append(f"{''.join(labels)}amix=inputs={len(labels)}:duration=longest:normalize=0,alimiter=limit=0.95,"
               f"atrim=0:{total}[aout]")
     cmd += ["-filter_complex", ";".join(fc), "-map", "[vout]", "-map", "[aout]", "-t", f"{total:.2f}",
-            "-c:v", "libx264", "-preset", "medium", "-crf", "19", "-pix_fmt", "yuv420p",
+            "-c:v", "libx264", "-preset", "medium", "-crf", "19", "-threads", "2", "-x264-params", "rc-lookahead=10", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-movflags", "+faststart", str(final)]
     M.run(cmd)
     meta = part_meta(si, p)
@@ -219,6 +246,18 @@ def build_long(workdir, final, si, parts):
           f"[b]scale=-2:{LH}[fg];[bg][fg]overlay=(W-w)/2:0,format=yuv420p[v]")
     M.run([M.FFMPEG, "-y", "-i", str(vertical), "-filter_complex", fc, "-map", "[v]", "-map", "0:a",
            "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-c:a", "copy", "-movflags", "+faststart", str(final)])
+    # thumbnail for the long video: a dramatic frame from part 1 + big suspense words
+    frame = workdir / "thumb_frame.jpg"
+    M.run([M.FFMPEG, "-y", "-ss", f"{parts[0][1]['hook_len'] + 9:.1f}", "-i", str(parts[0][0]), "-frames:v", "1",
+           str(frame)])
+    bg = Image.open(frame).convert("RGB")
+    bg = bg.crop((0, (bg.height - bg.width * 9 // 16) // 2, bg.width, (bg.height + bg.width * 9 // 16) // 2))
+    bg = bg.resize((1280, 720), Image.LANCZOS)
+    card = workdir / "thumb_card.png"
+    thumb_card([(s["name"].upper(), 120, (255, 214, 64)), ("POORI KAHANI", 105, (255, 45, 45)),
+                (f"PART 1-{len(parts)}", 70, (255, 255, 255))], card, 1280, 720, top=150)
+    bg.paste(Image.open(card), (0, 0), Image.open(card))
+    bg.save(final.with_suffix(".jpg"), quality=92)
     mins = int(t // 60)
     return {
         "format": "series_long", "key": f"{s['id']}long", "made_for_kids": False, "channel": "story",

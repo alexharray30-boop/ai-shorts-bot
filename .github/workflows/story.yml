@@ -97,7 +97,7 @@ jobs:
             gh release delete-asset story-bank "$NEXT" -y
             gh release delete-asset story-bank "${NEXT%.mp4}.json" -y || true
           else
-            python bot/main.py --force
+            echo "No ready-made video in the banks - skipping (live rendering would use the Cloudflare allowance)."
           fi
 
       - name: Keep the video for 3 days (Actions -> run -> Artifacts)

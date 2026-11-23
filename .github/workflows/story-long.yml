@@ -38,10 +38,12 @@ jobs:
           NEXT=$(gh release view series-long-bank --json assets -q '[.assets[].name | select(endswith(".mp4"))] | sort | .[0] // empty' 2>/dev/null || true)
           if [ -z "$NEXT" ]; then echo "no long video ready yet"; exit 0; fi
           mkdir -p dl
-          gh release download series-long-bank -p "$NEXT" -p "${NEXT%.mp4}.json" -D dl --clobber
+          gh release download series-long-bank -p "$NEXT" -p "${NEXT%.mp4}.json" -p "${NEXT%.mp4}.jpg" -D dl --clobber || \
+            gh release download series-long-bank -p "$NEXT" -p "${NEXT%.mp4}.json" -D dl --clobber
           python bot/main.py --force --video "dl/$NEXT" --meta "dl/${NEXT%.mp4}.json"
           gh release delete-asset series-long-bank "$NEXT" -y
           gh release delete-asset series-long-bank "${NEXT%.mp4}.json" -y || true
+          gh release delete-asset series-long-bank "${NEXT%.mp4}.jpg" -y || true
       - name: Save history
         run: |
           git config user.name "ai-shorts-bot"
