@@ -43,20 +43,47 @@ def _fit(img):
     l, t = (img.width - W) // 2, (img.height - H) // 2
     return img.crop((l, t, l + W, t + H))
 
+_CF = None
+
+
+def cloudflare_login():
+    """Works out the token and account id even if the two secrets were swapped or mixed up:
+    every pasted piece is tried as a token, and Cloudflare itself is asked for the account id."""
+    global _CF
+    if _CF is not None:
+        return _CF
+    import os
+    import re as _re
+    raw = " ".join(os.getenv(k, "") for k in ("CF_API_TOKEN", "CF_ACCOUNT_ID"))
+    pieces = [w for w in _re.split(r"[\s\"'=:,/]+", raw) if len(w) >= 20]
+    hex_ids = [w.lower() for w in _re.findall(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32}(?![0-9a-fA-F])", raw)]
+    for t in sorted(pieces, key=len, reverse=True):
+        try:
+            r = requests.get("https://api.cloudflare.com/client/v4/accounts", timeout=30,
+                             headers={"Authorization": f"Bearer {t}"})
+            if r.ok and r.json().get("success") and r.json().get("result"):
+                acc = r.json()["result"][0]["id"]
+                M.log("cloudflare check: token OK, account id found automatically")
+                _CF = (t, acc)
+                return _CF
+        except Exception:
+            pass
+    for t in pieces:  # token works but cannot list accounts: fall back to a pasted 32-character id
+        for acc in hex_ids:
+            if t.lower() != acc:
+                _CF = (t, acc)
+                M.log("cloudflare check: using the pasted account id")
+                return _CF
+    M.log(f"cloudflare check: NO WORKING TOKEN (pieces: {[len(p) for p in pieces]} chars)")
+    _CF = ("", "")
+    return _CF
+
 
 def fetch_cloudflare(prompt, path, seed):
     """Realistic images from Cloudflare Workers AI (free daily allowance). Needs CF_API_TOKEN + CF_ACCOUNT_ID."""
     import base64
     import os
-    raw_t, raw_a = os.getenv("CF_API_TOKEN", "").strip(), os.getenv("CF_ACCOUNT_ID", "").strip()
-    import re as _re
-    blob = f"{raw_a} {raw_t}"
-    m = _re.search(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32}(?![0-9a-fA-F])", blob)  # account id, wherever it was pasted
-    words = [w for w in _re.split(r"[\s\"'=:,]+", blob) if len(w) >= 35 and (not m or w != m.group(0))]
-    acc = m.group(0).lower() if m else raw_a
-    tok = max(words, key=len) if words else raw_t
-    M.log(f"cloudflare check: account id {'found' if m else 'NOT FOUND'} | token {'found' if words else 'NOT FOUND'} "
-          f"| CF_ACCOUNT_ID has {len(raw_a)} chars, CF_API_TOKEN has {len(raw_t)} chars")
+    tok, acc = cloudflare_login()
     if not tok or not acc:
         return False
     full = f"{prompt}, {REAL_LOOK}"
