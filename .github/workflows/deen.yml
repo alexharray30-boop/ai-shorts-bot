@@ -1,0 +1,91 @@
+name: Khurram Shahzad - Islamic Shorts (Allah ke 99 Naam, Masnoon Duaen)
+
+on:
+  schedule:
+    - cron: "37 * * * *"   # checks every hour; uploads when 7.5h have passed (~3 a day)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "test = make videos only (download from Artifacts), upload = upload now"
+        type: choice
+        options: [test, upload]
+        default: test
+      format:
+        description: "naam or dua (empty = take turns)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deen-channel
+  cancel-in-progress: false
+
+jobs:
+  shorts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CHANNEL: deen
+      YT4_CLIENT_ID: ${{ secrets.YT4_CLIENT_ID }}
+      YT4_CLIENT_SECRET: ${{ secrets.YT4_CLIENT_SECRET }}
+      YT4_REFRESH_TOKEN: ${{ secrets.YT4_REFRESH_TOKEN }}
+      MIN_HOURS_BETWEEN_UPLOADS: "7.5"  # shares the Google project quota with Kismat Kahaniyan (3 + 3 a day)
+      PRIVACY_STATUS: ${{ vars.DEEN_PRIVACY_STATUS || 'public' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Is an upload due?
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "due=true" >> "$GITHUB_OUTPUT"
+          elif [ -z "$YT4_REFRESH_TOKEN" ]; then
+            echo "channel not connected yet"; echo "due=false" >> "$GITHUB_OUTPUT"
+          else
+            python bot/main.py --check-only
+          fi
+
+      - name: Install FFmpeg, Arabic font and text shaping
+        if: steps.check.outputs.due == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core fonts-hosny-amiri libraqm0 libfribidi0 libharfbuzz0b
+          python -c "from PIL import features; assert features.check('raqm'), 'raqm missing'; print('Arabic shaping OK')"
+
+      - name: Make (and upload) the Short
+        if: steps.check.outputs.due == 'true'
+        run: |
+          if [ "${{ inputs.mode }}" = "test" ]; then
+            python bot/main.py --bank 1 --bank-formats naam --bank-batch 1 --bank-prefix=-naam --bank-dir out/test
+            python bot/main.py --bank 1 --bank-formats dua --bank-batch 1 --bank-prefix=-dua --bank-dir out/test
+            exit 0
+          fi
+          python bot/main.py --force ${{ inputs.format && format('--format {0}', inputs.format) || '' }}
+
+      - name: Keep the video for 3 days (Actions -> run -> Artifacts)
+        if: steps.check.outputs.due == 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-${{ github.run_id }}
+          path: |
+            out/**/*.mp4
+            out/**/*.json
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Save history
+        if: steps.check.outputs.due == 'true' && inputs.mode != 'test'
+        run: |
+          git config user.name "ai-shorts-bot"
+          git config user.email "ai-shorts-bot@users.noreply.github.com"
+          git add state/ || true
+          git diff --cached --quiet || (git commit -m "bot: upload log" && (git push || (git pull --rebase && git push)))
