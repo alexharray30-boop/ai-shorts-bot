@@ -697,7 +697,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--check-only", action="store_true")
     ap.add_argument("--format", choices=["kids", "riddle", "guess_animal", "count", "colors", "odd_one_out",
-                                         "abc", "shapes", "gk", "cricket", "paheli", "fact", "gta"])
+                                         "abc", "shapes", "gk", "cricket", "paheli", "fact", "gta", "islami", "game", "naam", "dua"])
     ap.add_argument("--bank", type=int, help="make this many videos for the video bank (no upload)")
     ap.add_argument("--bank-dir", default=str(ROOT / "bank"))
     ap.add_argument("--bank-formats", help="comma list, e.g. guess_animal,count")
