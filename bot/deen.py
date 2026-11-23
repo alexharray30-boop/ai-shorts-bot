@@ -14,7 +14,15 @@ import tempfile
 from PIL import Image, ImageDraw, ImageFont, features
 
 import kids
+import json
+import pathlib
+
 from deen_content import DUAS, NAMES
+
+# Arabic for duas comes ONLY from bot/deen_verified.json (built by tools/build_deen_verified.py from the
+# Quran text on quran.com and from Hisn al-Muslim). A dua that is not in that file is never shown.
+VERIFIED = json.loads((pathlib.Path(__file__).with_name("deen_verified.json")).read_text(encoding="utf-8"))
+OK_DUAS = sorted(int(k) for k in VERIFIED["duas"])
 
 M = None
 VOICE = "ur-PK-AsadNeural"
@@ -57,7 +65,7 @@ def _pango_block(text, w, h, start, color):
     with tempfile.TemporaryDirectory() as td:
         while True:
             out = os.path.join(td, f"a{size}.png")
-            subprocess.run(["pango-view", "--no-display", "-q", f"--output={out}", f"--font=Amiri {size}",
+            subprocess.run(["pango-view", "--no-display", "-q", f"--output={out}", f"--font=Noto Naskh Arabic {size}",
                             "--dpi=72", f"--width={w}", "--wrap=word", "--align=center", "--rtl",
                             "--background=transparent", f"--foreground={hexcol}", "--margin=0",
                             "--line-spacing=1.05", f"--text={text}"], check=True)
@@ -223,9 +231,10 @@ def make_name(workdir, final, used):
 
 
 def make_dua(workdir, final, used):
-    fresh = [i for i in range(len(DUAS)) if f"dua:{i}" not in used]
-    i = random.choice(fresh or list(range(len(DUAS))))
-    t_r, t_u, ar, tr, mean_r, mean_u, src = DUAS[i]
+    fresh = [i for i in OK_DUAS if f"dua:{i}" not in used]
+    i = random.choice(fresh or OK_DUAS)
+    t_r, t_u, _typed, tr, mean_r, mean_u, src = DUAS[i]
+    ar = VERIFIED["duas"][str(i)]["arabic"]
     voice = [t_u, f"اس کا ترجمہ ہے: {mean_u}", "یہ دعا یاد کریں اور آگے شیئر کریں۔"]
     render(workdir, final, "MASNOON DUA", "1f932", t_r, ar, M.S(230), tr, "TARJUMA", mean_r, f"Hawala: {src}", voice)
     title = f"{t_r} 🤲 Masnoon Dua #shorts"
