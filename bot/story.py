@@ -54,7 +54,7 @@ def cloudflare_login():
         return _CF
     import os
     import re as _re
-    raw = " ".join(os.getenv(k, "") for k in ("CF_API_TOKEN", "CF_ACCOUNT_ID"))
+    raw = " ".join(os.getenv(k, "") for k in ("CF_API_TOKEN", "CF_ACCOUNT_ID", "CF_ACCOUNT"))
     pieces = [w for w in _re.split(r"[\s\"'=:,/]+", raw) if len(w) >= 20]
     hex_ids = [w.lower() for w in _re.findall(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32}(?![0-9a-fA-F])", raw)]
     for t in sorted(pieces, key=len, reverse=True):
