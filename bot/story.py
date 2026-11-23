@@ -48,12 +48,15 @@ def fetch_cloudflare(prompt, path, seed):
     """Realistic images from Cloudflare Workers AI (free daily allowance). Needs CF_API_TOKEN + CF_ACCOUNT_ID."""
     import base64
     import os
-    tok, acc = os.getenv("CF_API_TOKEN", "").strip(), os.getenv("CF_ACCOUNT_ID", "").strip()
+    raw_t, raw_a = os.getenv("CF_API_TOKEN", "").strip(), os.getenv("CF_ACCOUNT_ID", "").strip()
     import re as _re
-    m = _re.search(r"[0-9a-f]{32}", acc.lower())  # paste-proof: pull the 32-character id out of a URL etc.
-    M.log("cloudflare account id:", "looks right" if m else f"WRONG FORMAT ({len(acc)} chars) - needs the 32-character Account ID")
-    acc = m.group(0) if m else acc
-    tok = tok.split()[-1] if tok else tok
+    blob = f"{raw_a} {raw_t}"
+    m = _re.search(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32}(?![0-9a-fA-F])", blob)  # account id, wherever it was pasted
+    words = [w for w in _re.split(r"[\s\"'=:,]+", blob) if len(w) >= 35 and (not m or w != m.group(0))]
+    acc = m.group(0).lower() if m else raw_a
+    tok = max(words, key=len) if words else raw_t
+    M.log(f"cloudflare check: account id {'found' if m else 'NOT FOUND'} | token {'found' if words else 'NOT FOUND'} "
+          f"| CF_ACCOUNT_ID has {len(raw_a)} chars, CF_API_TOKEN has {len(raw_t)} chars")
     if not tok or not acc:
         return False
     full = f"{prompt}, {REAL_LOOK}"
