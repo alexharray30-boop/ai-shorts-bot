@@ -1,0 +1,62 @@
+name: Kismat Kahaniyan - Make Story Bank (realistic)
+
+# Makes realistic AI drama stories (Cloudflare images) one by one and stores them in the
+# "story-bank" release. Stops by itself when Cloudflare's free daily allowance is used up
+# and continues the next day, until all stories are made (no repeats).
+
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: "how many stories to try in this run"
+        default: "40"
+  schedule:
+    - cron: "30 1 * * *"   # every day 01:30 UTC: continue with stories not made yet
+
+permissions:
+  contents: write
+
+concurrency:
+  group: story-bank
+  cancel-in-progress: false
+
+jobs:
+  make:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    env:
+      CHANNEL: story
+      STORY_NO_REPEAT: "1"
+      RENDER_SCALE: "0.5"
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      CF_ACCOUNT: ${{ vars.CF_ACCOUNT }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+      - name: Stories already in the bank
+        run: |
+          gh release view story-bank >/dev/null 2>&1 || gh release create story-bank --title "Story Bank" \
+            --latest=false --notes "Ready-made realistic stories for Kismat Kahaniyan."
+          mkdir -p used
+          gh release download story-bank -p "*.json" -D used --clobber 2>/dev/null || true
+          ls used | wc -l
+      - name: Make stories (stops at the daily Cloudflare limit)
+        continue-on-error: true
+        run: >
+          python bot/main.py --bank ${{ inputs.count || '40' }} --bank-formats story
+          --bank-batch "${{ github.run_number }}" --bank-used used --bank-dir bank
+      - name: Save them in the bank
+        if: always()
+        run: |
+          ls bank 2>/dev/null || exit 0
+          for i in 1 2 3; do gh release upload story-bank bank/* --clobber && break || sleep 20; done
+          echo "Stories waiting in the bank:"
+          gh release view story-bank --json assets -q '.assets[].name' | grep -c '\.mp4$' || true

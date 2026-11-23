@@ -76,7 +76,18 @@ jobs:
             python bot/main.py --force --format "${{ inputs.format }}"
             exit 0
           fi
-          python bot/main.py --force
+          # next ready-made realistic story from the bank, if any
+          NEXT=$(gh release view story-bank --json assets -q '[.assets[].name | select(endswith(".mp4"))] | sort | .[0] // empty' 2>/dev/null || true)
+          if [ -n "$NEXT" ]; then
+            echo "Uploading from story bank: $NEXT"
+            mkdir -p dl
+            gh release download story-bank -p "$NEXT" -p "${NEXT%.mp4}.json" -D dl --clobber
+            python bot/main.py --force --video "dl/$NEXT" --meta "dl/${NEXT%.mp4}.json"
+            gh release delete-asset story-bank "$NEXT" -y
+            gh release delete-asset story-bank "${NEXT%.mp4}.json" -y || true
+          else
+            python bot/main.py --force
+          fi
 
       - name: Keep the video for 3 days (Actions -> run -> Artifacts)
         if: steps.check.outputs.due == 'true' && always()

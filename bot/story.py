@@ -17,7 +17,7 @@ W, H, FPS = 1080, 1920, 30
 NARRATOR = "ur-PK-AsadNeural"
 LOOK = ("cinematic 3D animated movie still, Pixar style, dramatic lighting, emotional, detailed, vertical "
         "composition, fully clothed, modest, family friendly, no text, no watermark")
-REAL_LOOK = ("photorealistic cinematic film still, ultra detailed realistic face, natural skin texture, sharp eyes, "
+REAL_LOOK = ("photorealistic cinematic film still, ultra detailed realistic face, sharp eyes, "
              "85mm lens, shallow depth of field, dramatic movie lighting, high-end drama series, vertical 9:16 "
              "composition, fully clothed, modest, family friendly, no text, no watermark")
 XF = 0.4
@@ -86,13 +86,20 @@ def fetch_cloudflare(prompt, path, seed):
     tok, acc = cloudflare_login()
     if not tok or not acc:
         return False
-    full = f"{prompt}, {REAL_LOOK}"
+    import re as _re
+    gentle = _re.sub(r"\b(pushed|pushing|shouting|angry|crying|tears|scared|rude|body|skin|hugging|hug)\b", "",
+                     prompt, flags=_re.I)
+    variants = [f"{prompt}, {REAL_LOOK}",
+                f"{gentle}, wholesome family drama, photorealistic cinematic film still, dramatic lighting, "
+                "fully clothed, modest, no text"]
     for model in CF_MODELS:
-        body = {"prompt": full[:2000], "seed": seed % 2**31}
+      for full in variants:
+        body = {"prompt": full[:2000]}
         if "lucid" in model:
-            body.update(width=864, height=1536, guidance=4.5, num_steps=30)
+            body.update(width=864, height=1536, guidance=4.5, num_steps=30, seed=seed % 2**31)
         else:
             body.update(steps=8)
+        retry_variant = False
         for attempt in range(3):
             try:
                 r = requests.post(f"https://api.cloudflare.com/client/v4/accounts/{acc}/ai/run/{model}",
@@ -103,15 +110,27 @@ def fetch_cloudflare(prompt, path, seed):
                     path.write_bytes(base64.b64decode(r.json()["result"]["image"]))
                 else:
                     M.log(f"cloudflare {model.split('/')[-1]} HTTP {r.status_code}: {r.text[:160]}")
-                    break  # try the next model
+                    if "NSFW" in r.text:
+                        retry_variant = True  # false alarm: try the gentler wording
+                    elif r.status_code == 429 or "allocation" in r.text.lower() or "limit" in r.text.lower():
+                        raise QuotaError(r.text[:160])
+                    break
                 img = _fit(Image.open(path).convert("RGB")).filter(ImageFilter.UnsharpMask(2, 60, 2))
                 img.save(path, quality=95)
                 M.log(f"image by cloudflare {model.split('/')[-1]}")
                 return True
+            except QuotaError:
+                raise
             except Exception as e:
                 M.log(f"cloudflare attempt {attempt + 1} failed:", str(e)[:120])
                 time.sleep(5 * (attempt + 1))
+        if not retry_variant:
+            break  # this model failed for another reason: go to the next model
     return False
+
+
+class QuotaError(Exception):
+    """Cloudflare's free daily image allowance is used up."""
 
 
 def fetch_image(prompt, path, seed):
@@ -176,8 +195,13 @@ def hook_png(lines, path):
 
 
 def pick(workdir, final, history, force_format=None):
+    import os
     used = {h.get("key") for h in history}
-    choices = [i for i in range(len(STORIES)) if f"story:{i}" not in used] or list(range(len(STORIES)))
+    choices = [i for i in range(len(STORIES)) if f"story:{i}" not in used]
+    if not choices:
+        if os.getenv("STORY_NO_REPEAT") == "1":
+            raise SystemExit("all stories are already made - nothing new to render")
+        choices = list(range(len(STORIES)))
     idx = random.choice(choices)
     st = STORIES[idx]
     seed = random.randint(1, 10**6)
@@ -188,7 +212,11 @@ def pick(workdir, final, history, force_format=None):
     try:
         for i, (urdu, cap, prompt) in enumerate(st["scenes"]):
             img = workdir / f"s{i}.jpg"
-            if not fetch_image(prompt.format(s=st["style"]), img, seed + i):
+            try:
+                ok = fetch_image(prompt.format(s=st["style"]), img, seed + i)
+            except QuotaError as e:
+                raise SystemExit(f"Cloudflare free daily limit reached - will continue tomorrow ({e})")
+            if not ok:
                 if i == 0:
                     raise RuntimeError("first image failed")
                 Image.open(imgs[-1]).transpose(Image.FLIP_LEFT_RIGHT).save(img)
