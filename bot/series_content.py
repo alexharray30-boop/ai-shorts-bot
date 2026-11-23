@@ -5,5 +5,7 @@ from series_s03 import S03
 from series_s04 import S04
 from series_s05 import S05
 from series_s06 import S06
+from series_s07 import S07
+from series_s08 import S08
 
-SERIES = [S01, S02, S03, S04, S05, S06]
+SERIES = [S01, S02, S03, S04, S05, S06, S07, S08]
