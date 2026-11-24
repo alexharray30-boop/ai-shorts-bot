@@ -6,7 +6,7 @@ on:
       channel:
         description: "kids or pk"
         type: choice
-        options: [pk, kids, story]
+        options: [pk, kids, story, deen]
         default: pk
       action:
         type: choice
@@ -31,6 +31,9 @@ jobs:
       YT3_CLIENT_ID: ${{ secrets.YT3_CLIENT_ID }}
       YT3_CLIENT_SECRET: ${{ secrets.YT3_CLIENT_SECRET }}
       YT3_REFRESH_TOKEN: ${{ secrets.YT3_REFRESH_TOKEN }}
+      YT4_CLIENT_ID: ${{ secrets.YT4_CLIENT_ID }}
+      YT4_CLIENT_SECRET: ${{ secrets.YT4_CLIENT_SECRET }}
+      YT4_REFRESH_TOKEN: ${{ secrets.YT4_REFRESH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
