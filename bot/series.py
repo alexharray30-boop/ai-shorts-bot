@@ -32,18 +32,27 @@ def setup(main_module):
     ST.M = main_module
 
 
+SAFE_TOP, SAFE_BOTTOM, SAFE_SIDE = 300, 1340, 120  # Shorts UI covers the bottom ~30% and the right edge
+
+
 def end_png(lines, path):
-    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, W, H], fill=(0, 0, 0, 150))
-    y = 560 if len(lines) <= 4 else 400
-    for i, (ln, size, col) in enumerate(lines):
-        f, wl, sz = M.fit_text(ln, W - 120, 420, size, "Black")
-        for w in wl:
-            tw = d.textlength(w, font=f)
-            d.text(((W - tw) / 2, y), w, font=f, fill=col, stroke_width=10, stroke_fill=(10, 5, 0))
-            y += int(sz * 1.15)
-        y += 50
+    """End card text kept inside the Shorts safe zone (y 300-1340, 120 px side margins); shrinks to fit."""
+    scale = 1.0
+    while True:
+        img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.rectangle([0, 0, W, H], fill=(0, 0, 0, 150))
+        y = SAFE_TOP
+        for ln, size, col in lines:
+            f, wl, sz = M.fit_text(ln, W - 2 * SAFE_SIDE, 400, int(size * scale), "Black")
+            for w in wl:
+                tw = d.textlength(w, font=f)
+                d.text(((W - tw) / 2, y), w, font=f, fill=col, stroke_width=max(5, sz // 12), stroke_fill=(10, 5, 0))
+                y += int(sz * 1.08)
+            y += int(28 * scale)
+        if y <= SAFE_BOTTOM or scale < 0.5:
+            break
+        scale *= 0.92
     img.save(path)
 
 
