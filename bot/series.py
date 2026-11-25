@@ -16,8 +16,14 @@ from series_content import SERIES
 M = None
 W, H, FPS = 1080, 1920, 30
 HOOK = 2.2   # title card "NAME / PART x/10" over the first scene
-END = 5.0    # end card "search ... Part x+1"
+END = 8.0    # end card: subscribe + share to see the next part, and what to search
 XF = 0.4
+# the user's rule: every part must end by telling viewers to SUBSCRIBE and SHARE to watch the next part
+CTA_LINES = [("AAGE KYA HUA?", 140, (255, 214, 64)),
+             ("Agla part dekhne ke liye", 80, (255, 255, 255)),
+             ("Channel SUBSCRIBE zaroor karein", 98, (255, 60, 60)),
+             ("aur video SHARE karein!", 98, (255, 214, 64))]
+CTA_VOICE = "اگلا پارٹ دیکھنے کے لیے چینل کو سبسکرائب ضرور کریں اور ویڈیو کو شیئر کریں۔"
 
 
 def setup(main_module):
@@ -30,7 +36,7 @@ def end_png(lines, path):
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, W, H], fill=(0, 0, 0, 150))
-    y = 560
+    y = 560 if len(lines) <= 4 else 400
     for i, (ln, size, col) in enumerate(lines):
         f, wl, sz = M.fit_text(ln, W - 120, 420, size, "Black")
         for w in wl:
@@ -117,9 +123,8 @@ def render_part(workdir, final, si, p):
         endimg = workdir / "end.jpg"
         Image.open(imgs[-1]).convert("RGB").filter(ImageFilter.GaussianBlur(18)).save(endimg, quality=92)
         if p < n:
-            lines = [("AAGE KYA HUA?", 150, (255, 214, 64)), ("YouTube par search karein:", 80, (255, 255, 255)),
-                     (f"{s['search']} Part {p + 1}", 120, (255, 80, 80)), ("Channel subscribe karein", 70, (255, 255, 255))]
-            end_voice = f"آگے کیا ہوا؟ اگلا حصہ دیکھنے کے لیے یوٹیوب پر سرچ کریں: {s['search_ur']}، پارٹ {p + 1}۔"
+            lines = CTA_LINES + [(f"Search: {s['search']} Part {p + 1}", 62, (255, 255, 255))]
+            end_voice = (f"آگے کیا ہوا؟ {CTA_VOICE} اگلا حصہ دیکھنے کے لیے سرچ کریں: {s['search_ur']}، پارٹ {p + 1}۔")
         else:
             lines = [("KAHANI KHATAM", 150, (255, 214, 64)), ("Poori kahani ek video mein", 85, (255, 255, 255)),
                      ("hamare channel par dekhein", 85, (255, 255, 255)), ("Subscribe karein", 80, (255, 80, 80))]
@@ -205,8 +210,52 @@ def render_part(workdir, final, si, p):
             "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-movflags", "+faststart", str(final)]
     M.run(cmd)
     meta = part_meta(si, p)
-    meta.update(hook_len=HOOK, end_start=round(starts[ns], 3), total=round(total, 3))
+    meta.update(hook_len=HOOK, end_start=round(starts[ns], 3), total=round(total, 3), cta=True)
     return meta
+
+
+def append_cta(src, out, workdir):
+    """For parts rendered before the subscribe/share rule: add a short end card (blurred last frame, big
+    SUBSCRIBE + SHARE text, Urdu voice) after the video. Uses no Cloudflare images."""
+    import pathlib
+    workdir = pathlib.Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    last = workdir / "last.jpg"
+    M.run([M.FFMPEG, "-y", "-sseof", "-0.3", "-i", str(src), "-frames:v", "1", "-update", "1", str(last)])
+    Image.open(last).convert("RGB").resize((W, H)).filter(ImageFilter.GaussianBlur(18)).save(last, quality=92)
+    card = workdir / "cta.png"
+    end_png(CTA_LINES, card)
+    old_voice = M.VOICE
+    M.VOICE = ST.NARRATOR
+    try:
+        v = workdir / "cta.mp3"
+        vd = M.tts(CTA_VOICE, v, max_len=5.5)
+    finally:
+        M.VOICE = old_voice
+    dur = max(vd + 1.2, 5.0)
+    fx = M.sfx(workdir)
+    clip = workdir / "cta.mp4"
+    cmd = [M.FFMPEG, "-y", "-loop", "1", "-t", f"{dur:.2f}", "-i", str(last), "-i", str(card), "-i", str(fx["ding"])]
+    if vd:
+        cmd += ["-i", str(v)]
+    fc = (f"[0:v]scale={W}:{H},fps={FPS}[b];[b][1:v]overlay=0:0,format=yuv420p[v];"
+          "[2:a]aresample=44100,aformat=channel_layouts=stereo,volume=0.6[d]")
+    if vd:
+        fc += ";[3:a]aresample=44100,aformat=channel_layouts=stereo,adelay=300|300,volume=1.8[n];" \
+              "[d][n]amix=inputs=2:duration=longest:normalize=0[a]"
+    else:
+        fc += ";[d]anull[a]"
+    M.run(cmd + ["-filter_complex", fc, "-map", "[v]", "-map", "[a]", "-t", f"{dur:.2f}",
+                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p", "-r", str(FPS),
+                 "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2", str(clip)])
+    # join (re-encode so both pieces match exactly)
+    M.run([M.FFMPEG, "-y", "-i", str(src), "-i", str(clip), "-filter_complex",
+           f"[0:v]scale={W}:{H},fps={FPS},format=yuv420p,setsar=1[v0];[1:v]setsar=1[v1];"
+           "[0:a]aresample=44100,aformat=channel_layouts=stereo[a0];[1:a]aresample=44100[a1];"
+           "[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]",
+           "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "medium", "-crf", "19", "-pix_fmt", "yuv420p",
+           "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)])
+    return out
 
 
 def build_long(workdir, final, si, parts):

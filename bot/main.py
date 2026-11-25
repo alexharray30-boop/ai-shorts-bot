@@ -161,6 +161,16 @@ def upload(yt, path, meta):
     from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload
 
+    # series parts made before the "subscribe + share for the next part" rule get that end card added now
+    if meta.get("format") == "series" and not meta.get("cta") and FFMPEG:
+        try:
+            import series
+            series.setup(sys.modules[__name__])
+            path = series.append_cta(path, OUT / "with_cta.mp4", OUT / "cta_work")
+            log("added subscribe/share end card")
+        except Exception as e:
+            log("could not add the subscribe/share end card, uploading as is:", e)
+
     if os.getenv("SEO", "1") == "1":
         import seo
         if str(meta.get("format", "")).startswith("series"):
