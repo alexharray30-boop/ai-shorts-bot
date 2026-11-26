@@ -10,7 +10,7 @@ on:
     inputs:
       plan:
         description: "format:videos list (formats: gk, islami, cricket, paheli, fact, game, gta)"
-        default: "islami:20,gk:20,cricket:15,paheli:15,fact:15,game:10,gta:5"
+        default: "islami:40,gk:15,cricket:10,paheli:15,fact:10,game:7,gta:3"
       per_job:
         description: "videos per parallel job"
         default: "5"

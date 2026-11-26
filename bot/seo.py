@@ -192,7 +192,7 @@ def enhance_pk(meta, log=print):
         f"{body.split(chr(10) + chr(10))[0]}\n\n"
         f"Is video mein: {', '.join(top)}.\n\n"
         + "\n\n".join(body.split("\n\n")[1:2]) +
-        "\n\nRoz naye Urdu quiz, paheliyan aur facts! Channel subscribe karein 🔔\n\n"
+        "\n\nDimagh Lagao (@DimaghLagaoQuiz): roz naye Islamic Quiz, GK Quiz, paheliyan aur facts! Channel subscribe karein 🔔\n\n"
         f"#shorts #urdu {HASHTAG_PK[fmt]} #pakistan #dimaghlagao"
     )
     tags = []
@@ -240,3 +240,50 @@ def enhance_series(meta, log=print):
     m["seo_keywords"] = kws
     log("seo-series: top keywords ->", ", ".join(kws[:8]))
     return m
+
+
+# --------------------------------------------------------------------------- #
+# Dimagh Lagao: one unique title per video, built from the video's own questions
+# --------------------------------------------------------------------------- #
+PK_LABEL = {"gk": "GK Quiz Urdu 🧠", "islami": "Islamic Quiz Urdu 🕌", "cricket": "Cricket Quiz 🏏",
+            "paheli": "Urdu Paheli 🤔", "fact": "Amazing Facts Urdu 🤯", "game": "Gaming Quiz 🎮",
+            "gta": "GTA 6 Quiz 🎮"}
+
+
+def _norm(t):
+    t = re.sub(r"#\w+", "", str(t).lower())
+    return re.sub(r"[^a-z0-9]+", " ", t).strip()
+
+
+def unique_pk_title(meta, history):
+    """Title = first question of the video + format label; if that was used before, the next question,
+    then a numbered fallback. Checked against every past upload title of the channel."""
+    fmt = meta.get("format", "").replace("_long", "")
+    label = PK_LABEL.get(fmt, "Dimagh Lagao Quiz 🧠")
+    used = set()
+    for h in history:
+        for k in ("title", "uploaded_title"):
+            if h.get(k):
+                used.add(_norm(h[k]))
+                used.add(_norm(str(h[k]).split("|")[0]))  # the question part on its own
+    questions = []
+    for line in meta.get("description", "").splitlines():
+        line = line.strip()
+        if line[:1] in ("❓", "🤔", "💡"):
+            q = line[1:].split("✅")[0].strip()
+            if q:
+                questions.append(q)
+    for q in questions:
+        q = q if len(q) <= 62 else q[:62].rsplit(" ", 1)[0] + "…"
+        if fmt == "fact" and not q.lower().startswith("kya"):
+            cand = f"{q} 🤯 | Kya Aap Jante The?"
+        elif fmt in ("paheli",):
+            cand = f"Paheli: {q} | Bujho To Jaanein 🤔"
+        else:
+            cand = f"{q} | {label}"
+        if _norm(cand) not in used and _norm(q) not in used:
+            return cand[:90] + " #shorts"
+    n = sum(1 for h in history if str(h.get("format", "")).startswith(fmt)) + 1
+    while _norm(f"{label} No. {n}") in used and n < 10000:
+        n += 1
+    return f"{label} No. {n} | {len(questions) or 5} Naye Sawal"[:90] + " #shorts"

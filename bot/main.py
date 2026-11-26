@@ -160,6 +160,7 @@ def hours_since_last_upload(yt, history):
 def upload(yt, path, meta):
     from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload
+    caller_meta = meta  # record_upload() saves from this dict
 
     # series parts made before the "subscribe + share for the next part" rule get that end card added now
     if meta.get("format") == "series" and not meta.get("cta") and FFMPEG:
@@ -181,6 +182,13 @@ def upload(yt, path, meta):
             meta = seo.enhance_pk(meta, log)  # live Pakistan search phrases
         elif meta.get("made_for_kids"):
             meta = seo.enhance(meta, log)  # live US/UK search phrases
+
+    if CHANNEL == "pk" or meta.get("channel") == "pk":
+        import seo
+        meta = dict(meta)
+        meta["title"] = seo.unique_pk_title(meta, load_history())  # never repeat a past title
+        caller_meta["uploaded_title"] = meta["title"]  # saved in the history by record_upload
+        log("unique title:", meta["title"])
 
     pk_channel = CHANNEL in ("pk", "story", "deen") or meta.get("channel") in ("pk", "story", "deen")
     body = {
@@ -862,7 +870,7 @@ def main():
 def record_upload(history, meta, vid):
     history.append({"time": dt.datetime.now(dt.timezone.utc).isoformat(), "title": meta["title"],
                     "format": meta.get("format", ""), "key": meta.get("key", ""), "keys": meta.get("keys", []),
-                    "question": meta.get("question", ""), "video_id": vid})
+                    "question": meta.get("question", ""), "uploaded_title": meta.get("uploaded_title", ""), "video_id": vid})
     save_history(history)
 
 

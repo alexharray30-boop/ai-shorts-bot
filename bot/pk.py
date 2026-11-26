@@ -49,7 +49,7 @@ LONG_INFO = {
              ["Kya Aap Jante Hain? 🤯 Amazing Facts in Urdu", "{n} Hairat Angez Facts 😱 Urdu Mein",
               "Amazing Facts in Urdu 🤯 Dimagh Hila Dene Wale"]),
 }
-FOOTER = ("\n\nRoz naye GK Quiz, Cricket Quiz, Paheliyan aur Amazing Facts! Channel subscribe karein 🔔\n\n"
+FOOTER = ("\n\nDimagh Lagao (@DimaghLagaoQuiz): roz naye Islamic Quiz, GK Quiz, Paheliyan aur Amazing Facts! Channel subscribe karein 🔔\n\n"
           "#urdu #gkquiz #pakistan #paheliyan #shorts")
 TAGS = ["gk quiz in urdu", "general knowledge urdu", "urdu quiz", "pakistan quiz", "gk questions", "paheliyan",
         "urdu paheliyan", "cricket quiz", "amazing facts in urdu", "kya aap jante hain", "dimagh lagao",
@@ -263,7 +263,7 @@ def game(workdir, final, used):
 
 NEON = [((236, 72, 153), (49, 10, 101), (34, 211, 238)), ((168, 85, 247), (20, 8, 60), (250, 204, 21)),
         ((249, 115, 22), (88, 12, 80), (34, 211, 238))]
-FORMATS = [(gk, 3), (islami, 3), (cricket, 2), (paheli, 3), (fact, 2), (game, 1)]  # gta only on request
+FORMATS = [(gk, 2), (islami, 6), (cricket, 1), (paheli, 2), (fact, 2), (game, 1)]  # Islamic Quiz gets the most views; gta only on request
 
 
 def pick(workdir, final, history, force_format=None):
