@@ -74,7 +74,13 @@ jobs:
             exit 0
           fi
           # 1) next ready-made video from the video bank, if any
-          NEXT=$(gh release view pk-bank --json assets -q '[.assets[].name | select(endswith(".mp4"))] | sort | .[0] // empty' 2>/dev/null || true)
+          #    (Islamic Quiz first: 2 of every 3 uploads; facts last - see tools/pk_pick.py)
+          mkdir -p bankmeta
+          gh release download pk-bank -p "*.json" -D bankmeta --clobber 2>/dev/null || true
+          NEXT=$(python tools/pk_pick.py bankmeta state/pk_history.json || true)
+          if [ -z "$NEXT" ]; then
+            NEXT=$(gh release view pk-bank --json assets -q '[.assets[].name | select(endswith(".mp4"))] | sort | .[0] // empty' 2>/dev/null || true)
+          fi
           if [ -n "$NEXT" ]; then
             echo "Uploading from video bank: $NEXT"
             mkdir -p dl
