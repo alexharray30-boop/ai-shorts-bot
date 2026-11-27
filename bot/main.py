@@ -744,6 +744,7 @@ def main():
     ap.add_argument("--bank-used", help="folder of .json files of videos already in the bank (to avoid repeats)")
     ap.add_argument("--video", help="upload this ready-made mp4 (needs --meta)")
     ap.add_argument("--meta")
+    ap.add_argument("--deen-long", action="store_true", help="make the ~8 minute Islamic video (Deen channel)")
     ap.add_argument("--long", nargs="?", const="auto",
                     help="make a long landscape kids compilation: abc, guess_animal, count, odd_one_out or auto")
     args = ap.parse_args()
@@ -782,6 +783,22 @@ def main():
     if args.video:
         meta = json.loads(pathlib.Path(args.meta).read_text(encoding="utf-8"))
         vid = upload(yt, pathlib.Path(args.video), meta)
+        record_upload(history, meta, vid)
+        return
+
+    # ---- ~8 minute Islamic video (Deen channel, 2 a week) ----
+    if args.deen_long:
+        import deen_long
+        stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+        workdir = OUT / f"deenlong-{stamp}"
+        workdir.mkdir(parents=True, exist_ok=True)
+        final = OUT / f"long-{stamp}.mp4"
+        meta = deen_long.make_long(sys.modules[__name__], workdir, final, history)
+        (workdir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        log(f"long video ready: {meta['title']} ({probe_duration(final):.0f}s)")
+        if args.dry_run:
+            return
+        vid = upload(yt, final, meta)
         record_upload(history, meta, vid)
         return
 

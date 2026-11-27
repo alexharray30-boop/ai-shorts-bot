@@ -48,6 +48,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "due=true" >> "$GITHUB_OUTPUT"
+          elif [ "$(date -u +%u)" = "2" ] || [ "$(date -u +%u)" = "5" ]; then
+            echo "Tuesday/Friday: 8 minute video day, no Shorts"; echo "due=false" >> "$GITHUB_OUTPUT"
           elif [ -z "$YT4_REFRESH_TOKEN" ]; then
             echo "channel not connected yet"; echo "due=false" >> "$GITHUB_OUTPUT"
           else

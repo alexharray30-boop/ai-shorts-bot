@@ -152,8 +152,9 @@ class Quiet(kids.Scene):
         M.run(cmd)
 
 
-def render(workdir, final, head_text, icon, sub, arabic, ar_size, translit, label, meaning, source, voice_lines):
-    pal = random.choice(PALETTES)
+def render(workdir, final, head_text, icon, sub, arabic, ar_size, translit, label, meaning, source, voice_lines,
+           cta=True, mean_idx=-2, pal=None, tail=2.6):
+    pal = pal or random.choice(PALETTES)
     gold = pal[2]
     M.D = 30.0  # temporary; set from the voice below
     sc = Quiet(workdir, pal)
@@ -162,8 +163,8 @@ def render(workdir, final, head_text, icon, sub, arabic, ar_size, translit, labe
         starts.append(t)
         dur = sc.say(line, t, f"v{k}", max_len=14.0, vol=1.9) or 1.5
         t += dur + 0.55
-    M.D = round(max(t + 2.6, 12.0), 2)
-    cta_t = M.D - 2.6
+    M.D = round(max(t + tail, 12.0 if cta else 4.0), 2)
+    cta_t = M.D - 2.6 if cta else M.D + 99
 
     W = M.W - M.S(240)
     head = header(head_text, icon, workdir)
@@ -191,7 +192,7 @@ def render(workdir, final, head_text, icon, sub, arabic, ar_size, translit, labe
     else:  # keep the header on top and centre the rest in the free space
         shift = (bottom - y) / 2
         pos = {n: v + (shift if n != "head" else 0) for n, v in pos.items()}
-    t_mean = starts[-2] if len(starts) >= 2 else 2.0
+    t_mean = starts[mean_idx] if len(starts) >= 2 else 2.0
 
     def draw(t):
         f, d = sc.base_frame(t)
@@ -219,9 +220,8 @@ def make_name(workdir, final, used):
              "یہ نام یاد کریں اور آگے شیئر کریں۔"]
     render(workdir, final, "ALLAH KE 99 NAAM", "2728", f"Naam number {i + 1} / 99", ar, M.S(420),
            roman, "MATLAB", mean_r, "", voice)
-    title = random.choice([f"Allah Ka Naam {roman} 🤍 Matlab Kya Hai? #shorts",
-                           f"{roman} Ka Matlab 🤍 Allah Ke 99 Naam ({i + 1}/99) #shorts",
-                           f"Allah Ke 99 Naam: {roman} 🤍 Urdu Matlab #shorts"])
+    # this title pattern gets 5-10x the views of the others (312, 391, 349 vs 28-76)
+    title = f"Allah Ke 99 Naam: {roman} 🤍 Urdu Matlab #shorts"
     desc = (f"{ar}\n{roman}: {mean_r}\n\nAllah Ta'ala ke 99 khoobsurat naamon mein se naam number {i + 1}. "
             "Roz ek naam yaad karein aur apne ghar walon ko bhi share karein 🤍\n\n"
             "#allah #asmaulhusna #99namesofallah #islam #islamicshorts #urdu #shorts")
