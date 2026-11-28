@@ -27,7 +27,7 @@ jobs:
       YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
       YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      MIN_HOURS_BETWEEN_UPLOADS: "7.5"  # shared Google project quota (~6 uploads/day total); back to 4.5 when the channel has its own project
+      MIN_HOURS_BETWEEN_UPLOADS: "23"  # 1 a day: this channel gets almost no views, its quota goes to Dimagh Lagao
       VIDEO_SECONDS: "10"
       PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS || 'public' }}
     steps:
@@ -46,7 +46,7 @@ jobs:
         run: |
           DOW=$(TZ=America/Los_Angeles date +%u)
           if [ "$DOW" = "1" ] || [ "$DOW" = "3" ] || [ "$DOW" = "5" ]; then
-            echo "MIN_HOURS_BETWEEN_UPLOADS=11" >> "$GITHUB_ENV"
+            echo "MIN_HOURS_BETWEEN_UPLOADS=23" >> "$GITHUB_ENV"
             echo "Long-video day: 11h gap (2 Shorts today)"
           else
             echo "Normal day: 7.5h gap (3 Shorts today)"

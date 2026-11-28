@@ -172,7 +172,7 @@ def upload(yt, path, meta):
         except Exception as e:
             log("could not add the subscribe/share end card, uploading as is:", e)
 
-    if os.getenv("SEO", "1") == "1":
+    if os.getenv("SEO", "1") == "1" and not meta.get("long"):  # long videos keep their own title
         import seo
         if str(meta.get("format", "")).startswith("series"):
             meta = seo.enhance_series(meta, log)  # live Pakistan search phrases for suspense stories
@@ -183,7 +183,7 @@ def upload(yt, path, meta):
         elif meta.get("made_for_kids"):
             meta = seo.enhance(meta, log)  # live US/UK search phrases
 
-    if CHANNEL == "pk" or meta.get("channel") == "pk":
+    if (CHANNEL == "pk" or meta.get("channel") == "pk") and not meta.get("long"):
         import seo
         meta = dict(meta)
         meta["title"] = seo.unique_pk_title(meta, load_history())  # never repeat a past title
@@ -744,6 +744,7 @@ def main():
     ap.add_argument("--bank-used", help="folder of .json files of videos already in the bank (to avoid repeats)")
     ap.add_argument("--video", help="upload this ready-made mp4 (needs --meta)")
     ap.add_argument("--meta")
+    ap.add_argument("--pk-long", action="store_true", help="make the ~8 minute Islamic Quiz (Dimagh Lagao)")
     ap.add_argument("--deen-long", action="store_true", help="make the ~8 minute Islamic video (Deen channel)")
     ap.add_argument("--long", nargs="?", const="auto",
                     help="make a long landscape kids compilation: abc, guess_animal, count, odd_one_out or auto")
@@ -783,6 +784,22 @@ def main():
     if args.video:
         meta = json.loads(pathlib.Path(args.meta).read_text(encoding="utf-8"))
         vid = upload(yt, pathlib.Path(args.video), meta)
+        record_upload(history, meta, vid)
+        return
+
+    # ---- ~8 minute Islamic Quiz (Dimagh Lagao, 2 a week) ----
+    if args.pk_long:
+        import pk_long
+        stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+        workdir = OUT / f"pklong-{stamp}"
+        workdir.mkdir(parents=True, exist_ok=True)
+        final = OUT / f"long-{stamp}.mp4"
+        meta = pk_long.make_long(sys.modules[__name__], workdir, final, history)
+        (workdir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        log(f"long video ready: {meta['title']} ({probe_duration(final):.0f}s)")
+        if args.dry_run:
+            return
+        vid = upload(yt, final, meta)
         record_upload(history, meta, vid)
         return
 

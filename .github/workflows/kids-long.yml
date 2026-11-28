@@ -5,7 +5,8 @@ name: AI Adventure Kids - Long Videos (4K, TV)
 
 on:
   schedule:
-    - cron: "0 13 * * 1,3,5"   # 13:00 UTC = 8 AM New York / 1 PM London
+    # paused (no views); run by hand from Actions if wanted
+    # - cron: "0 13 * * 1,3,5"
   workflow_dispatch:
     inputs:
       format:

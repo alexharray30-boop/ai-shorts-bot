@@ -31,7 +31,7 @@ jobs:
       YT4_CLIENT_ID: ${{ secrets.YT4_CLIENT_ID }}
       YT4_CLIENT_SECRET: ${{ secrets.YT4_CLIENT_SECRET }}
       YT4_REFRESH_TOKEN: ${{ secrets.YT4_REFRESH_TOKEN }}
-      MIN_HOURS_BETWEEN_UPLOADS: "7.5"  # shares the Google project quota with Kismat Kahaniyan (3 + 3 a day)
+      MIN_HOURS_BETWEEN_UPLOADS: "5.5"  # ~4 a day; Kismat Kahaniyan now uploads only 1 a day on the shared quota
       PRIVACY_STATUS: ${{ vars.DEEN_PRIVACY_STATUS || 'public' }}
     steps:
       - uses: actions/checkout@v4

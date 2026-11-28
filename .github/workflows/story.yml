@@ -35,7 +35,7 @@ jobs:
       CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
       CF_ACCOUNT: ${{ vars.CF_ACCOUNT }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      MIN_HOURS_BETWEEN_UPLOADS: "7.5"  # ~3 Shorts a day (own project; quota allows up to ~6)
+      MIN_HOURS_BETWEEN_UPLOADS: "23"  # 1 a day until the channel finds an audience
       VIDEO_SECONDS: "10"
       PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS || 'public' }}
     steps:

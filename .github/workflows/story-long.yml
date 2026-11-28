@@ -4,7 +4,7 @@ name: Kismat Kahaniyan - Long Video (Poori Kahani)
 
 on:
   schedule:
-    - cron: "0 14 * * 2,4,6"   # 14:00 UTC = 7 PM Pakistan
+    - cron: "0 14 * * 6"   # Saturday 14:00 UTC = 7 PM Pakistan (was 3 a week, too few views)
   workflow_dispatch:
 
 permissions:

@@ -1,0 +1,66 @@
+name: Dimagh Lagao - 8 minute Islamic Quiz (Wed + Sun)
+
+# Wednesday and Sunday 14:00 UTC = 7 PM Pakistan, before the evening peak.
+# 35 Islamic questions (~8 min), landscape, with a custom thumbnail.
+
+on:
+  schedule:
+    - cron: "0 14 * * 0,3"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "test = make only (download from Artifacts), upload = upload now"
+        type: choice
+        options: [test, upload]
+        default: test
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pk-channel
+  cancel-in-progress: false
+
+jobs:
+  long:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      CHANNEL: pk
+      RENDER_SCALE: "0.5"   # 1920x1080
+      YT2_CLIENT_ID: ${{ secrets.YT2_CLIENT_ID }}
+      YT2_CLIENT_SECRET: ${{ secrets.YT2_CLIENT_SECRET }}
+      YT2_REFRESH_TOKEN: ${{ secrets.YT2_REFRESH_TOKEN }}
+      PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS || 'public' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+      - name: Make (and upload) the 8 minute quiz
+        run: |
+          if [ "${{ inputs.mode }}" = "test" ]; then
+            python bot/main.py --dry-run --pk-long
+          else
+            python bot/main.py --force --pk-long
+          fi
+      - name: Keep the video + thumbnail for 3 days
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pk-long-${{ github.run_id }}
+          path: |
+            out/long-*.mp4
+            out/long-*.jpg
+          retention-days: 3
+          if-no-files-found: ignore
+      - name: Save history
+        if: always()
+        run: |
+          git config user.name "ai-shorts-bot"
+          git config user.email "ai-shorts-bot@users.noreply.github.com"
+          git add state/ || true
+          git diff --cached --quiet || (git commit -m "bot: upload log" && (git push || (git pull --rebase && git push)))
