@@ -21,7 +21,7 @@ def make_long(M, workdir, final, history):
     kids.to_landscape(vertical, final)
     n = sum(1 for h in history if h.get("format") == "islami_long8") + 1
     thumbnail(M, final.with_suffix(".jpg"))
-    questions = meta["description"].split("\n\n", 1)[1] if "\n\n" in meta["description"] else ""
+    questions = "\n".join(ln for ln in meta["description"].splitlines() if ln.startswith("❓"))
     meta.update(
         format="islami_long8", long=True, made_for_kids=False, channel="pk",
         title=random.choice([
